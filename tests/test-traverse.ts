@@ -1,16 +1,14 @@
 /// <reference path='../defs/node-0.8.d.ts' />
+/// <reference path='../lib/shared.d.ts' />
 
-import shared = module('../lib/shared');
-var Store = shared.Store;
+var utils: shared.utils = require('../lib/shared.js').tests.utils;
+var tracker: shared.tracker = require('../lib/shared.js').tests.tracker;
+var main: shared.main = require('../lib/shared.js').tests.main;
 
-import embed = module('test-embed');
-import tracker = module('../lib/tracker');
-import types = module('../lib/types');
-
-var _ = require('underscore');
+var Store = main.Store;
 
 function isEqual(test, obj1, obj2) {
-  test.ok(_.isEqual(obj1,obj2));
+  test.ok(utils.isEqual(obj1,obj2));
   test.ok(obj1._tracker._id === obj2._tracker._id);
   test.ok(obj1._tracker._rev === obj2._tracker._rev);
 }
@@ -22,7 +20,7 @@ exports.master = function(test) {
   test.ok(typeof m.master === 'function');
   test.ok(typeof m.save === 'function');
   test.ok(typeof m.root === 'function');
-  test.ok(_.isEqual(m.root(),{}));
+  test.ok(utils.isEqual(m.root(),{}));
   test.ok(m.master() === m);
   test.done();
 };

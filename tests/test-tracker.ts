@@ -1,6 +1,9 @@
 /// <reference path='../defs/node-0.8.d.ts' />
+/// <reference path='../lib/shared.d.ts' />
 
-import tracker = module('../lib/tracker');
+var tracker: shared.tracker = require('../lib/shared.js').tests.tracker;
+var utils: shared.utils = require('../lib/shared.js').tests.utils;
+
 var _ = require('underscore');
 
 function reset() {
@@ -40,15 +43,9 @@ exports.objctor = function(test) {
   var t = new tracker.Tracker(obj);
   test.ok(typeof obj._tracker === 'object');
   test.ok(obj._tracker === t);
-  test.ok(typeof t._id === 'string');
-  test.ok(t._id.length === 36);
-  test.ok(typeof t._type === 'object');
-  test.ok(typeof t._type.id === 'string');
-  test.ok(t._type.id.length === 36);
-  test.ok(typeof t._type.hash === 'number');
-  test.ok(typeof t._type.props === 'object');
-  test.ok(typeof t.id() === 'string');
-  test.ok(t.id().length === 36);
+  test.ok(utils.isUID(t.id()));
+  test.ok(utils.isUID(t._id));
+  test.ok(utils.isObject(t.type()));
   test.done();
 };
 
@@ -68,15 +65,8 @@ exports.arrayctor = function(test) {
   var t = new tracker.Tracker(obj);
   test.ok(typeof obj._tracker === 'object');
   test.ok(obj._tracker === t);
-  test.ok(typeof t._id === 'string');
-  test.ok(t._id.length === 36);
-  test.ok(typeof t._type === 'object');
-  test.ok(typeof t._type.id === 'string');
-  test.ok(t._type.id.length === 36);
-  test.ok(typeof t._type.hash === 'number');
-  test.ok(typeof t._type.props === 'object');
-  test.ok(typeof t.id() === 'string');
-  test.ok(t.id().length === 36);
+  test.ok(utils.isUID(t.id()));
+  test.ok(utils.isObject(t.type()));
   test.done();
 };
 
@@ -323,7 +313,6 @@ exports.arrreverse = function(test) {
 };
 
 exports.arrsort = function(test) {
-
   reset();
   var obj = [1, 2, 3, 4];
   test.ok(typeof new tracker.Tracker(obj) === 'object');
@@ -669,7 +658,6 @@ exports.writesetArray1 = function(test) {
 };
 
 exports.writesetArray2 = function(test) {
-
   reset();
   var obj = [1, 2, 3];
   test.ok(typeof new tracker.Tracker(obj) === 'object');

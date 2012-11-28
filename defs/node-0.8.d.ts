@@ -18,6 +18,7 @@ declare var console: {
     error(...data: any[]): void;
     warn(...data: any[]): void;
     dir(obj: any): void;
+    time(label: string): void;
     timeEnd(label: string): void;
     trace(label: string): void;
     assert(expression: any, ...message: string[]): void;

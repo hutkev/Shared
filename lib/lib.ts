@@ -1,7 +1,30 @@
-﻿// Copyright (c) Kevin Jones. All rights reserved. Licensed under the Apache License, Version 2.0.
-// See LICENSE.txt in the project root for complete license information.
+﻿// Copyright (c) Kevin Jones. All rights reserved. Licensed under the Apache 
+// License, Version 2.0. See LICENSE.txt in the project root for complete
+// license information.
 
-/// <reference path='../defs/node-0.8.d.ts' />
+/// <reference path='import.ts' />
+/// <reference path='debug.ts' />
 /// <reference path='utils.ts' />
+/// <reference path='id.ts' />
+/// <reference path='collect.ts' />
+/// <reference path='types.ts' />
+/// <reference path='router.ts' />
+/// <reference path='work.ts' />
+/// <reference path='tracker.ts' />
+/// <reference path='shared.ts' />
 
-exports.utils = shared.utils;
+exports.Store = shared.main.Store;
+exports.primaryStore = shared.main.Store.primaryStore;
+
+shared.utils.defaultLogger().enableDebugLogging('ROUTER');
+shared.utils.defaultLogger().enableDebugLogging('STORE');
+shared.utils.defaultLogger().enableDebugLogging('WORK');
+shared.utils.enableAsserts(true);
+
+exports.tests = {};
+exports.tests.utils = shared.utils;
+exports.tests.types = shared.types;
+exports.tests.router = shared.router;
+exports.tests.work = shared.work;
+exports.tests.tracker = shared.tracker;
+exports.tests.main = shared.main;

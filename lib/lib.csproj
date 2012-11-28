@@ -19,27 +19,6 @@
     <IISExpressUseClassicPipelineMode />
     <UpgradeBackupLocation />
   </PropertyGroup>
-  <ItemGroup>
-    <Content Include="defs\node-0.8.d.ts" />
-    <TypeScriptCompile Include="lib\lib.ts" />
-    <TypeScriptCompile Include="lib\utils.ts" />
-    <TypeScriptCompile Include="tests\test-utils.ts" />
-    <TypeScriptCompile Include="lib\router.ts" />
-    <TypeScriptCompile Include="tests\test-traverse.ts" />
-    <TypeScriptCompile Include="lib\tracker.ts" />
-    <TypeScriptCompile Include="lib\types.ts" />
-    <TypeScriptCompile Include="lib\shared.ts" />
-    <TypeScriptCompile Include="tests\test-embed.ts" />
-    <TypeScriptCompile Include="tests\test-router.ts" />
-    <TypeScriptCompile Include="tests\test-tracker.ts" />
-    <TypeScriptCompile Include="tests\test-save.ts" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="package.json" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="README.md" />
-  </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
@@ -47,6 +26,21 @@
   <PropertyGroup>
     <RootNamespace>tshared</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <TypeScriptCompile Include="types.ts" />
+    <TypeScriptCompile Include="id.ts" />
+    <TypeScriptCompile Include="import.ts" />
+    <TypeScriptCompile Include="message.ts" />
+    <TypeScriptCompile Include="router.ts" />
+    <TypeScriptCompile Include="serial.ts" />
+    <TypeScriptCompile Include="lib.ts" />
+    <TypeScriptCompile Include="collect.ts" />
+    <TypeScriptCompile Include="debug.ts" />
+    <TypeScriptCompile Include="shared.ts" />
+    <TypeScriptCompile Include="tracker.ts" />
+    <TypeScriptCompile Include="utils.ts" />
+    <TypeScriptCompile Include="work.ts" />
+  </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v10.0\WebApplications\Microsoft.WebApplication.targets" Condition="false" />

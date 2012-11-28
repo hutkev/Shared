@@ -1,25 +1,52 @@
 /// <reference path='../defs/node-0.8.d.ts' />
+/// <reference path='../lib/shared.d.ts' />
 
-import shared = module('../lib/shared');
+var mod = require('../lib/shared.js');
 
-var _ = require('underscore');
+function primary() {
+  var m = mod.primaryStore();
+  if (m === null) {
+    new mod.Store();
+  }
+  return mod.primaryStore();
+}
 
 exports.init = function(test) {
-  var m = new shared.Store();
-  test.ok(_.isEqual(m.root(),{}));
-  test.ok(m.master() === m);
+  var m :shared.main.Store = new mod.Store();
+  var n :shared.main.Store = new mod.Store();
+  test.ok(m !== n);
+  test.ok(m.isPrimaryStore());
+  test.ok(!n.isPrimaryStore());
+  test.ok(mod.primaryStore() === m);
   test.done();
 };
 
-exports.emptySaveObj = function(test) {
-  var m = shared.Store.prototype.master();
-
-  var s = new shared.Store();
-  s.save(function(root) {
-    root.a = 1;
-  },function(ok) {
-    console.log(m.root());
-  });
+exports.startup = function(test) {
+  var m = primary();
+  var s = new mod.Store();
+  while (s.pending()) { }
+  test.ok(s.root()._tracker._id === m.root()._tracker._id);
   test.done();
 }
 
+exports.startup2 = function(test) {
+  var m = primary();
+  var s1 = new mod.Store();
+  while (s1.pending()) { }
+  test.ok(s1.root()._tracker._id === m.root()._tracker._id);
+  var s2 = new mod.Store();
+  while (s2.pending()) { }
+  test.ok(s2.root()._tracker._id === m.root()._tracker._id);
+  test.done();
+}
+
+exports.startup3 = function(test) {
+  var m = primary();
+  var s1 = new mod.Store();
+  var s2 = new mod.Store();
+  while (s1.pending()) { }
+  test.ok(s1.root()._tracker._id === m.root()._tracker._id);
+  while (s2.pending()) { }
+  test.ok(s2.root()._tracker._id === m.root()._tracker._id);
+  test.done();
+}

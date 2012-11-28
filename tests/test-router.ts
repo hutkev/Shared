@@ -1,164 +1,133 @@
 
-/// <reference path='../defs/node-0.8.d.ts' />
+/// <reference path='import.ts' />
 
-import modrouter = module('../lib/router');
-var router = modrouter.router;
+var utils: shared.utils = require('../lib/shared.js').tests.utils;
+var router: shared.router = require('../lib/shared.js').tests.router;
 
-var uuid = require('node-uuid');
-var _ = require('underscore');
 var cluster = require('cluster');
+utils.defaultLogger().enableDebugLogging('ROUTER');
 
-exports.exports = function(test) {
-  test.ok(typeof router === 'object');
+exports.instance = function (test) {
+  test.ok(utils.isObject(router.ClusterRouter.instance()));
+  test.ok(router.ClusterRouter.instance() === router.ClusterRouter.instance());
   test.done();
-};
+}
 
-exports.methods = function(test) {
-  test.ok(typeof router.register === 'function');
-  test.ok(typeof router.deregister === 'function');
-  test.ok(typeof router.dispatch === 'function');
-  test.ok(typeof router.clear === 'function');
+exports.register = function (test) {
+  var route = router.ClusterRouter.instance();
+  test.throws(function () { route.register(null); }, Error);
+  test.throws(function () { route.register(undefined); }, Error);
+  var recv = new router.QueueReceiver();
+  route.register(recv);
+  test.ok(recv.queue().length === 0);
+  route.register(recv);
+  test.ok(recv.queue().length === 0);
+  route.deregister(recv);
+  test.ok(recv.queue().length === 0);
+  route.deregister(recv);
+  test.ok(recv.queue().length === 1);
+  test.ok(recv.queue()[0].error.indexOf('This receiver is not currently registered')===0);
   test.done();
-};
-
-function Dummy() {
-  this._id = uuid.v1();
 }
 
-Dummy.prototype.id = function() {
-  return this._id;
-}
+/*
+exports.selfsend = function(test) {
+  var route = router.ClusterRouter.instance();
+  var recv = new router.QueueReceiver();
+  route.register(recv);
 
-Dummy.prototype.handle = function(msg) {
-  this._last = msg;
-}
+  test.throws(function () { route.send(null, null, null); }, Error);
+  test.throws(function () { route.send(recv.address(), null, null); }, Error);
+  test.throws(function () { route.send(null, recv.address(), null); }, Error);
+  test.throws(function () { route.send(undefined, undefined, null); }, Error);
+  test.throws(function () { route.send(recv.address(), undefined, null); }, Error);
+  test.throws(function () { route.send(undefined, recv.address(), null); }, Error);
 
-exports.register = function(test) {
-  router.clear();
-  var d1 = new Dummy();
+  route.send(recv.address(), recv.address(), null);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: null }]));
+  recv.queue().pop();
 
-  router.register(d1);
-  test.ok(router._map[d1.id()] !== undefined);
-  router.deregister(d1);
-  test.ok(router._map[d1.id()] === undefined);
+  route.send(recv.address(), recv.address(), undefined);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: undefined }]));
+  recv.queue().pop();
 
-  test.ok(router.register(d1) === true);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router.register(d1) === false);
-  test.ok(router.register(d1) === false);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router.deregister(d1) === true);
-  test.ok(router._map[d1.id()] === undefined);
-  test.ok(router.deregister(d1) === false);
-  test.ok(router.deregister(d1) === false);
-  test.ok(router._map[d1.id()] === undefined);
+  route.send(recv.address(), recv.address(), 0);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: 0 }]));
+  recv.queue().pop();
+
+  route.send(recv.address(), recv.address(), 1);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: 1 }]));
+  recv.queue().pop();
+
+  route.send(recv.address(), recv.address(), '');
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: '' }]));
+  recv.queue().pop();
+
+  route.send(recv.address(), recv.address(), 'a');
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: 'a' }]));
+  recv.queue().pop();
+
+  route.send(recv.address(), recv.address(), true);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: true }]));
+  recv.queue().pop();
+
+  route.send(recv.address(), recv.address(), false);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: false }]));
+  recv.queue().pop();
   
-  var d2 = new Dummy();
-  router.register(d1);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router._map[d2.id()] === undefined);
-  router.register(d2);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router._map[d2.id()] !== undefined);
-  router.deregister(d1);
-  test.ok(router._map[d1.id()] === undefined);
-  test.ok(router._map[d2.id()] !== undefined);
-  router.deregister(d2);
-  test.ok(router._map[d1.id()] === undefined);
-  test.ok(router._map[d2.id()] === undefined);
+  route.send(recv.address(), recv.address(), {});
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: {} }]));
+  recv.queue().pop();
 
-  router.register(d1);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router._map[d2.id()] === undefined);
-  router.register(d2);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router._map[d2.id()] !== undefined);
-  router.deregister(d2);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router._map[d2.id()] === undefined);
-  router.deregister(d1);
-  test.ok(router._map[d1.id()] === undefined);
-  test.ok(router._map[d2.id()] === undefined);
+  route.send(recv.address(), recv.address(), {a:1});
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: {a:1} }]));
+  recv.queue().pop();
 
-  router.register(d1);
-  router.register(d2);
-  test.ok(router._map[d1.id()] !== undefined);
-  test.ok(router._map[d2.id()] !== undefined);
-  router.clear();
-  test.ok(router._map[d1.id()] === undefined);
-  test.ok(router._map[d2.id()] === undefined);
+  route.send(recv.address(), recv.address(), []);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: [] }]));
+  recv.queue().pop();
 
-  test.done();
-};
+  route.send(recv.address(), recv.address(), [1]);
+  test.ok(utils.isEqual(recv.queue(), [{ from: recv.id(), msg: [1] }]));
+  recv.queue().pop();
 
-exports.send = function(test) {
-  router.clear();
-  var d1 = new Dummy();
-  router.register(d1);
-  var d2 = new Dummy();
-  router.register(d2);
-
-  var msg = {route_to: {id: 0, task: d1._id}, text: 'hello'};
-  router.dispatch(msg);
-  if (cluster.isMaster)
-    test.ok(d1._last === msg);
-
-  var msg = {route_to: {id: 0, task: d1._id}, text: 'goodbye'};
-  router.dispatch(msg);
-  if (cluster.isMaster)
-    test.ok(d1._last === msg);
-
-  var msg2 = {route_to: {id: 0, task: d2._id}, text: 'another'};
-  router.dispatch(msg2);
-  if (cluster.isMaster) {
-    test.ok(d1._last === msg);
-    test.ok(d2._last === msg2);
-  }
+  route.deregister(recv);
   test.done();
 }
 
-exports.names = function(test) {
-  router.clear();
-  var d1 = new Dummy();
-  router.register(d1,'d1');
-  var d2 = new Dummy();
-  router.register(d2,'d2');
+exports.localsend = function (test) {
+  var route = router.ClusterRouter.instance();
+  var recv1 = new router.QueueReceiver();
+  var recv2 = new router.QueueReceiver();
+  route.register(recv1);
+  route.register(recv2);
 
-  var msg = {route_to: {name: 'd1'}, text: 'hello'};
-  router.dispatch(msg);
-  if (cluster.isMaster)
-    test.ok(_.isEqual(d1._last, {route_to: {id: 0, task: d1._id}, text: 'hello'}));
+  route.send(recv1.address(), recv2.address(), {});
+  test.ok(utils.isEqual(recv1.queue(), [{ from: recv2.id(), msg: {} }]));
+  recv1.queue().pop();
+  test.ok(utils.isEqual(recv2.queue(), []));
 
-  var msg = {route_to: {name: 'd1'}, text: 'goodbye'};
-  router.dispatch(msg);
-  if (cluster.isMaster)
-    test.ok(_.isEqual(d1._last, {route_to: {id: 0, task: d1._id}, text: 'goodbye'}));
+  route.send(recv2.address(), recv1.address(), {});
+  test.ok(utils.isEqual(recv2.queue(), [{ from: recv1.id(), msg: {} }]));
+  recv1.queue().pop();
+  test.ok(utils.isEqual(recv1.queue(), []));
 
-  var msg2 = {route_to: {name: 'd2'}, text: 'another'};
-  router.dispatch(msg2);
-  if (cluster.isMaster) {
-    test.ok(d1._last === msg);
-    test.ok(_.isEqual(d1._last, {route_to: {id: 0, task: d1._id}, text: 'goodbye'}));
-    test.ok(_.isEqual(d2._last, {route_to: {id: 0, task: d2._id}, text: 'another'}));
-  }
-    
+  route.deregister(recv1);
+  route.deregister(recv2);
   test.done();
 }
 
-exports.fork = function(test) {
-  var count = 0;
-  if (cluster.isMaster) {
-    router.dispatch = function(msg) {
-      count++;
-    }
-    cluster.fork();
-    var terminate = function() {
-      if (count === 3)
-        process.exit(0);
-      else
-        process.nextTick(terminate);
-    };
-    process.nextTick(terminate);
-  }
+exports.noreceiver = function (test) {
+  var route = router.ClusterRouter.instance();
+  var recv1 = new router.QueueReceiver();
+  var recv2 = new router.QueueReceiver();
+  route.register(recv1);
+
+  route.send(recv2.address(), recv1.address(), {});
+  test.ok(utils.isEqual(recv1.queue(), []));
+  test.ok(utils.isEqual(recv2.queue(), []));
+
+  route.deregister(recv1);
   test.done();
 }
+*/

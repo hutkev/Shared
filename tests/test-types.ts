@@ -1,142 +1,77 @@
 /// <reference path='../defs/node-0.8.d.ts' />
+/// <reference path='../lib/shared.d.ts' />
 
-import types = module('../lib/types');
-var _ = require('underscore');
+var utils: shared.utils = require('../lib/shared.js').tests.utils;
+var types: shared.types = require('../lib/shared.js').tests.types;
 
-exports.exports = function(test) {
-  test.expect(2);
-  test.ok(typeof types.typeStore === 'object');
-  test.ok(typeof types.hashObj === 'function');
-  test.done();
-};
-
-exports.hash = function(test) {
-
-  test.ok(types.hashObj(null) === 0);
-  test.ok(types.hashObj(undefined) === 0);
-  test.ok(types.hashObj(0) === 0);
-  test.ok(types.hashObj(1) === 0);
-  test.ok(types.hashObj(true) === 0);
-  test.ok(types.hashObj(false) === 0);
-  test.ok(types.hashObj('') === 0);
-  test.ok(types.hashObj('a') === 0);
-  test.ok(types.hashObj({}) === 0);
-  test.ok(types.hashObj({a: 1}) !== 0);
-  test.ok(types.hashObj({a: 1}) === types.hashObj({a: 1}));
-  test.ok(types.hashObj({a: 1}) === types.hashObj({a: 2}));
-  test.ok(types.hashObj({a: 1}) !== types.hashObj({b: 1}));
-  test.ok(types.hashObj({ab: 1}) !== 0);
-  test.ok(types.hashObj({ba: 1}) !== 0);
-  test.ok(types.hashObj({ab: 1}) !== types.hashObj({ba: 1}));
-  test.ok(types.hashObj({a: 1, b: 1}) !== 0);
-  test.ok(types.hashObj({a: 1, b: 1}) === types.hashObj({a: 1, b: 1}));
-  test.ok(types.hashObj({a: 1, b: 1}) !== types.hashObj({b: 1, a: 1}));
-  test.ok(types.hashObj([]) === 1);
-  test.ok(types.hashObj([1]) !== 1);
-  test.ok(types.hashObj([1]) === types.hashObj([2]));
-  test.ok(types.hashObj([1]) === types.hashObj(['a']));
-  test.ok(types.hashObj([1]) === types.hashObj([true]));
-  test.ok(types.hashObj([1]) === types.hashObj([null]));
-  test.ok(types.hashObj([1, 2]) !== 0);
-  test.ok(types.hashObj([1, 2]) === types.hashObj([1, 2]));
-  test.ok(types.hashObj([1, 2]) === types.hashObj([2, 1]));
-  test.ok(types.hashObj([1, 2]) !== types.hashObj([1, 2, 3]));
-  test.done();
-};
-
-exports.simplelookup = function(test) {
-  test.ok(types.typeStore.type() === null);
-  test.ok(types.typeStore.type(null) === null);
-  test.ok(types.typeStore.type(undefined) === null);
-  test.ok(types.typeStore.type(0) === null);
-  test.ok(types.typeStore.type(1) === null);
-  test.ok(types.typeStore.type(true) === null);
-  test.ok(types.typeStore.type(false) === null);
-  test.ok(types.typeStore.type('') === null);
-  test.ok(types.typeStore.type('a') === null);
-  test.ok(types.typeStore.type({}) !== null);
-  test.ok(typeof types.typeStore.type({}) === 'object');
-  test.ok(typeof types.typeStore.type({}).id === 'string');
-  test.ok(typeof types.typeStore.type({}).hash === 'number');
-  test.ok(typeof types.typeStore.type({}).props === 'object');
-  test.ok(types.typeStore.type({}).id.length === 36);
-  test.ok(types.typeStore.type({}).hash === 0);
-  test.ok(_.isEqual(types.typeStore.type({}).props, []));
-  test.ok(types.typeStore.type({a: 1}) !== null);
-  test.ok(typeof types.typeStore.type({a: 1}) === 'object');
-  test.ok(typeof types.typeStore.type({a: 1}).id === 'string');
-  test.ok(typeof types.typeStore.type({a: 1}).hash === 'number');
-  test.ok(typeof types.typeStore.type({a: 1}).props === 'object');
-  test.ok(types.typeStore.type({a: 1}).id.length === 36);
-  test.ok(types.typeStore.type({a: 1}).hash !== 0);
-  test.ok(_.isEqual(types.typeStore.type({a: 1}).props, ['a']));
-  test.ok(types.typeStore.type({a: 1, b: 2}) !== null);
-  test.ok(typeof types.typeStore.type({a: 1, b: 2}) === 'object');
-  test.ok(typeof types.typeStore.type({a: 1, b: 2}).id === 'string');
-  test.ok(typeof types.typeStore.type({a: 1, b: 2}).hash === 'number');
-  test.ok(typeof types.typeStore.type({a: 1, b: 2}).props === 'object');
-  test.ok(types.typeStore.type({a: 1, b: 2}).id.length === 36);
-  test.ok(types.typeStore.type({a: 1, b: 2}).hash !== 0);
-  test.ok(_.isEqual(types.typeStore.type({a: 1, b: 2}).props, ['a', 'b']));
-  test.ok(types.typeStore.type([]) !== null);
-  test.ok(typeof types.typeStore.type([]) === 'object');
-  test.ok(typeof types.typeStore.type([]).id === 'string');
-  test.ok(typeof types.typeStore.type([]).hash === 'number');
-  test.ok(typeof types.typeStore.type([]).props === 'object');
-  test.ok(types.typeStore.type([]).id.length === 36);
-  test.ok(types.typeStore.type([]).hash === 1);
-  test.ok(types.typeStore.type([1]) !== null);
-  test.ok(typeof types.typeStore.type([1]) === 'object');
-  test.ok(typeof types.typeStore.type([1]).id === 'string');
-  test.ok(typeof types.typeStore.type([1]).hash === 'number');
-  test.ok(typeof types.typeStore.type([1]).props === 'object');
-  test.ok(types.typeStore.type([1]).id.length === 36);
-  test.ok(types.typeStore.type([1]).hash !== 0);
-  test.ok(types.typeStore.type([1, 2]) !== null);
-  test.ok(typeof types.typeStore.type([1, 2]) === 'object');
-  test.ok(typeof types.typeStore.type([1, 2]).id === 'string');
-  test.ok(typeof types.typeStore.type([1, 2]).hash === 'number');
-  test.ok(typeof types.typeStore.type([1, 2]).props === 'object');
-  test.ok(types.typeStore.type([1, 2]).id.length === 36);
-  test.ok(types.typeStore.type([1, 2]).hash !== 0);
-  test.done();
-};
+var typeStore = types.TypeStore.instance();
 
 exports.equality = function(test) {
-  test.ok(_.isEqual(types.typeStore.type({}), types.typeStore.type({})));
-  test.ok(!_.isEqual(types.typeStore.type({a: 1}), types.typeStore.type({})));
-  test.ok(_.isEqual(types.typeStore.type({a: 1}), types.typeStore.type({a: 1})));
-  test.ok(_.isEqual(types.typeStore.type({a: 1}), types.typeStore.type({a: 2})));
-  test.ok(_.isEqual(types.typeStore.type({a: 1, b: 2}), types.typeStore.type({a: 1, b: 2})));
-  test.ok(_.isEqual(types.typeStore.type({a: 1, b: 2}), types.typeStore.type({a: 2, b: 1})));
-  test.ok(!_.isEqual(types.typeStore.type({a: 1, b: 2}), types.typeStore.type({a: 2})));
-  test.ok(_.isEqual(types.typeStore.type([]), types.typeStore.type([])));
-  test.ok(!_.isEqual(types.typeStore.type([1]), types.typeStore.type([])));
-  test.ok(_.isEqual(types.typeStore.type([1]), types.typeStore.type([1])));
-  test.ok(_.isEqual(types.typeStore.type([1]), types.typeStore.type([2])));
-  test.ok(_.isEqual(types.typeStore.type([1, 2]), types.typeStore.type([1, 2])));
-  test.ok(_.isEqual(types.typeStore.type([1, 2]), types.typeStore.type([2, 1])));
-  test.ok(!_.isEqual(types.typeStore.type([1, 2]), types.typeStore.type([2])));
-  test.ok(!_.isEqual(types.typeStore.type({}), types.typeStore.type([])));
-  test.ok(!_.isEqual(types.typeStore.type({a: 1}), types.typeStore.type([1])));
-  test.ok(!_.isEqual(types.typeStore.type({a: 1, b: 1}), types.typeStore.type([1, 2])));
+  test.ok(utils.isEqual(typeStore.type({}), typeStore.type({})));
+  test.ok(!utils.isEqual(typeStore.type({a: 1}), typeStore.type({})));
+  test.ok(utils.isEqual(typeStore.type({a: 1}), typeStore.type({a: 1})));
+  test.ok(utils.isEqual(typeStore.type({a: 1}), typeStore.type({a: 2})));
+  test.ok(utils.isEqual(typeStore.type({a: 1, b: 2}), typeStore.type({a: 1, b: 2})));
+  test.ok(utils.isEqual(typeStore.type({a: 1, b: 2}), typeStore.type({a: 2, b: 1})));
+  test.ok(!utils.isEqual(typeStore.type({a: 1, b: 2}), typeStore.type({a: 2})));
+  test.ok(utils.isEqual(typeStore.type([]), typeStore.type([])));
+  test.ok(!utils.isEqual(typeStore.type([1]), typeStore.type([])));
+  test.ok(utils.isEqual(typeStore.type([1]), typeStore.type([1])));
+  test.ok(utils.isEqual(typeStore.type([1]), typeStore.type([2])));
+  test.ok(utils.isEqual(typeStore.type([1, 2]), typeStore.type([1, 2])));
+  test.ok(utils.isEqual(typeStore.type([1, 2]), typeStore.type([2, 1])));
+  test.ok(!utils.isEqual(typeStore.type([1, 2]), typeStore.type([2])));
+  test.ok(!utils.isEqual(typeStore.type({}), typeStore.type([])));
+  test.ok(!utils.isEqual(typeStore.type({a: 1}), typeStore.type([1])));
+  test.ok(!utils.isEqual(typeStore.type({a: 1, b: 1}), typeStore.type([1, 2])));
   test.done();
 };
 
 exports.directequality = function(test) {
-  test.ok(types.typeStore.type({}) === types.typeStore.type({}));
-  test.ok(types.typeStore.type({a: 1}) !== types.typeStore.type({}));
-  test.ok(types.typeStore.type({a: 1}) === types.typeStore.type({a: 1}));
-  test.ok(types.typeStore.type({a: 1}) === types.typeStore.type({a: 2}));
-  test.ok(types.typeStore.type({a: 1, b: 2}) === types.typeStore.type({a: 1, b: 2}));
-  test.ok(types.typeStore.type({a: 1, b: 2}) === types.typeStore.type({a: 2, b: 1}));
-  test.ok(types.typeStore.type({a: 1, b: 2}) !== types.typeStore.type({a: 2}));
-  test.ok(types.typeStore.type([]) === types.typeStore.type([]));
-  test.ok(types.typeStore.type([1]) !== types.typeStore.type([]));
-  test.ok(types.typeStore.type([1]) === types.typeStore.type([1]));
-  test.ok(types.typeStore.type([1]) === types.typeStore.type([2]));
-  test.ok(types.typeStore.type([1, 2]) === types.typeStore.type([1, 2]));
-  test.ok(types.typeStore.type([1, 2]) === types.typeStore.type([2, 1]));
-  test.ok(types.typeStore.type([1, 2]) !== types.typeStore.type([2]));
+  test.ok(typeStore.type({}) === typeStore.type({}));
+  test.ok(typeStore.type({a: 1}) !== typeStore.type({}));
+  test.ok(typeStore.type({a: 1}) === typeStore.type({a: 1}));
+  test.ok(typeStore.type({a: 1}) === typeStore.type({a: 2}));
+  test.ok(typeStore.type({a: 1, b: 2}) === typeStore.type({a: 1, b: 2}));
+  test.ok(typeStore.type({a: 1, b: 2}) === typeStore.type({a: 2, b: 1}));
+  test.ok(typeStore.type({a: 1, b: 2}) !== typeStore.type({a: 2}));
+  test.ok(typeStore.type([]) === typeStore.type([]));
+  test.ok(typeStore.type([1]) !== typeStore.type([]));
+  test.ok(typeStore.type([1]) === typeStore.type([1]));
+  test.ok(typeStore.type([1]) === typeStore.type([2]));
+  test.ok(typeStore.type([1, 2]) === typeStore.type([1, 2]));
+  test.ok(typeStore.type([1, 2]) === typeStore.type([2, 1]));
+  test.ok(typeStore.type([1, 2]) !== typeStore.type([2]));
   test.done();
 };
+
+exports.isobjarray = function (test) {
+  test.ok(typeStore.type({}).isobj());
+  test.ok(!typeStore.type([]).isobj());
+  test.ok(typeStore.type({a:1}).isobj());
+  test.ok(!typeStore.type([1]).isobj());
+  test.ok(typeStore.type({a:1,b:2}).isobj());
+  test.ok(!typeStore.type([1,2]).isobj());
+  test.ok(!typeStore.type({}).isarray());
+  test.ok(typeStore.type([]).isarray());
+  test.ok(!typeStore.type({a:1}).isarray());
+  test.ok(typeStore.type([1]).isarray());
+  test.ok(!typeStore.type({a:1,b:2}).isarray());
+  test.ok(typeStore.type([1,2]).isarray());
+  test.done();
+}
+
+exports.props = function (test) {
+  test.ok(utils.isEqual(typeStore.type({}).props(),[]));
+  test.ok(utils.isEqual(typeStore.type({a: 1}).props(),['a']));
+  test.ok(utils.isEqual(typeStore.type({a: 1,b: 2}).props(),['a','b']));
+  test.ok(utils.isEqual(typeStore.type({a: 1,b: 2, c: 3}).props(),['a','b','c']));
+  test.ok(utils.isEqual(typeStore.type([]).props(),[]));
+  test.ok(utils.isEqual(typeStore.type([1]).props(),['0']));
+  test.ok(utils.isEqual(typeStore.type([1,3]).props(),['0','1']));
+  test.ok(utils.isEqual(typeStore.type([1,3,5]).props(),['0','1','2']));
+  var a = []; a[2] = 1; a[7] = 2;
+  test.ok(utils.isEqual(typeStore.type(a).props(),['2','7']));
+  test.done();
+}
+
