@@ -27,8 +27,13 @@
     <RootNamespace>tshared</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <TypeScriptCompile Include="test-work.ts" />
     <TypeScriptCompile Include="unit.ts" />
+  </ItemGroup>
+  <ItemGroup>
+    <TypeScriptCompile Include="test-tracker.ts" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="test-serial.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />

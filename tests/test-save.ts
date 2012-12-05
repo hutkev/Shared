@@ -50,3 +50,62 @@ exports.startup3 = function(test) {
   test.ok(s2.root()._tracker._id === m.root()._tracker._id);
   test.done();
 }
+
+exports.getroot = function(test) {
+  var m = primary();
+  var s = new mod.Store();
+
+  test.expect(2);
+  s.save(
+    function (root: any) {
+      test.ok(root === s.root());
+    },
+    function (sucesss: bool) {
+      test.ok(sucesss);
+      test.done();
+    }
+  );
+}
+
+exports.getroot2 = function (test) {
+  var m = primary();
+  var s = new mod.Store();
+
+  test.expect(4);
+  s.save(
+    function (root: any) {
+      test.ok(root === s.root());
+    },
+    function (sucesss: bool) {
+      test.ok(sucesss);
+    }
+  );
+
+  s.save(
+    function (root: any) {
+      test.ok(root === s.root());
+    },
+    function (sucesss: bool) {
+      test.ok(sucesss);
+      test.done();
+    }
+  );
+}
+
+exports.writeprop = function(test) {
+  var m = primary();
+  var s = new mod.Store();
+
+  test.expect(2);
+  s.save(
+    function (root: any) {
+      test.ok(root === s.root());
+      root.a = 1;
+    },
+    function (sucesss: bool) {
+      test.ok(sucesss);
+      test.done();
+    }
+  );
+}
+

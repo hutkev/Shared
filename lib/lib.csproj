@@ -39,7 +39,6 @@
     <TypeScriptCompile Include="shared.ts" />
     <TypeScriptCompile Include="tracker.ts" />
     <TypeScriptCompile Include="utils.ts" />
-    <TypeScriptCompile Include="work.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />

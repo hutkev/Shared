@@ -9,7 +9,6 @@
 /// <reference path='collect.ts' />
 /// <reference path='types.ts' />
 /// <reference path='router.ts' />
-/// <reference path='work.ts' />
 /// <reference path='tracker.ts' />
 /// <reference path='shared.ts' />
 
@@ -18,13 +17,11 @@ exports.primaryStore = shared.main.Store.primaryStore;
 
 shared.utils.defaultLogger().enableDebugLogging('ROUTER');
 shared.utils.defaultLogger().enableDebugLogging('STORE');
-shared.utils.defaultLogger().enableDebugLogging('WORK');
 shared.utils.enableAsserts(true);
 
 exports.tests = {};
 exports.tests.utils = shared.utils;
 exports.tests.types = shared.types;
 exports.tests.router = shared.router;
-exports.tests.work = shared.work;
 exports.tests.tracker = shared.tracker;
 exports.tests.main = shared.main;

@@ -23,8 +23,8 @@ module shared {
       return uuid.v1();
     }
 
-    export function isUID(a: string) {
-      return isValue(a) && uuidPat.test(a);
+    export function isUID(a: uid) {
+      return isValue(a) && uuidPat.test(a.toString());
     }
 
     /*

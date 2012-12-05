@@ -47,9 +47,16 @@ module shared {
     }
 
     /**
+     * Non-null array value
+     */
+    export function isArray(value: any): bool  {
+      return (value && typeof value === 'object' && (value instanceof Array));
+    }
+
+    /**
      * Non-null object or array value
      */
-    export function isObjectorArray(value: any): bool  {
+    export function isObjectOrArray(value: any): bool  {
       return (value && typeof value === 'object');
     }
 
@@ -70,6 +77,36 @@ module shared {
       }
       return s;
     }
+
+    /**
+     * Corrected type of value.
+     * Arrays & null are not 'objects'
+     * Objects return their prototype type.
+     */
+    export function treatAs(value: any) :string {
+      var s = typeof value;
+      if (s === 'object') {
+        if (value) {
+          return Object.prototype.toString.call(value).
+            match(/^\[object\s(.*)\]$/)[1];
+        } else {
+          s = 'null';
+        }
+      }
+      return s;
+    }
+
+
+
+    // String
+    // Boolean
+    // Number
+    // Date
+    // RegExp
+    // Error
+    // EvalError
+    // RangeError
+
 
     export function flatClone(obj: any): any {
       return JSON.parse(JSON.stringify(obj));

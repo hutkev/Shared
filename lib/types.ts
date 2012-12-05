@@ -62,7 +62,7 @@ module shared {
       }
 
       type(obj: any): TypeDesc {
-        utils.dassert(utils.isObjectorArray(obj));
+        utils.dassert(utils.isObjectOrArray(obj));
         
         var p = TypeStore.props(obj);
         var td : TypeDesc = this._tree.find(p);
@@ -75,7 +75,7 @@ module shared {
       }
 
       static props(obj: any): string {
-        utils.dassert(utils.isObjectorArray(obj));
+        utils.dassert(utils.isObjectOrArray(obj));
         var props = 'o#';
         if (obj instanceof Array) {
           props = 'a#';

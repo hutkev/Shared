@@ -6,9 +6,43 @@
 /// <reference path='utils.ts' />
 /// <reference path='id.ts' />
 /// <reference path='types.ts' />
+/// <reference path='serial.ts' />
 
 module shared {
   export module tracker {
+
+    export interface TrackCache extends serial.ReferenceHandler {
+      disable: number;
+
+      cset(): any;
+      nset(): any;
+      rset(): any;
+    }
+
+    export class UnknownReference {
+      private _id: string;
+      private _prop: string;
+      private _missing: any;    // TODO: What is this?
+
+      constructor (id, prop, missing) {
+        this._id = id;
+        this._prop = prop;
+        this._missing = missing;
+      }
+
+      id() {
+        return this._id;
+      }
+
+      prop() {
+        return this._prop;
+      }
+
+      missing() {
+        return this._missing;
+      }
+    }
+
 
     /*
      * Object/Array tracker. Construct this over an object/array and it will
@@ -22,95 +56,87 @@ module shared {
      * rather than as quick & correct. A bit of extra thought can probably
      * improve the performance a lot.
      */
-    export function Tracker(obj: any, id?: string, rev?: number) {
+    export class Tracker {
+      private _tc: TrackCache;
+      private _id: utils.uid;
+      private _rev;
+      private _type: types.TypeDesc;
+      public _lastTx: number;
 
-      if (!(this instanceof Tracker)) {
-        return new Tracker(obj, id, rev);
+      constructor(tc: TrackCache, obj: any, id: utils.uid = utils.UID(), rev?: number) {
+        utils.dassert(utils.isUID(id));
+
+        this._tc = tc;
+        this._rev = rev || 0;
+        this._id = id;
+        this._lastTx = -1;
+        this._id = id;
+
+        if (obj === null || typeof (obj) !== 'object')
+          utils.defaultLogger().fatal('Trying to track non-object/array type');
+
+        if (obj.hasOwnProperty('_tracker'))
+          utils.defaultLogger().fatal('Trying to track already tracked object or array');
+
+        this._type = types.TypeStore.instance().type(obj);
+
+        if (obj instanceof Array) {
+          trackArray(obj);
+        }
+
+        Object.defineProperty(obj, '_tracker', {
+          value: this
+        });
+
+        for (var prop in obj) {
+          track(obj, prop);
+        }
       }
 
-      if (Tracker.prototype.disable === undefined) {
-        Tracker.prototype.disable = 0;
-        Tracker.prototype.cset = [];
-        Tracker.prototype.rset = {};
-        Tracker.prototype.nset = {};
-      }
+      /**
+       * Get the tracker cache this belong to
+       */
+      tc () : TrackCache {
+        return this._tc;
+      };
 
-      this._rev = rev || 0;
-      this._id = id;
-      this._lastTx = -1;
+      /**
+       * Get the unique object id
+       */
+      id () : utils.uid {
+        return this._id;
+      };
 
-      if (obj === null || typeof (obj) !== 'object')
-        throw new Error('Trying to track non-object/array type');
+      /**
+       * Get the objects (pre-change) type
+       */
+      type () : types.TypeDesc {
+        return this._type;
+      };
 
-      if (obj.hasOwnProperty('_tracker'))
-        throw new Error('Trying to track already tracked object or array');
+      /**
+       * Get/Increment the object revision, returning new value
+       */
+      rev(by?: number) : number {
+        if (by !== undefined)
+          this._rev += by;
+        return this._rev;
+      };
 
-      if (this._id === undefined) {
-        this._id = utils.UID();
-      } else if (!utils.isUID(this._id)) {
-        throw new Error('Invalid UUID passed as an id');
-      }
+      /**
+       * Collect chnages into underlying structures
+       */
+      collect (obj:any) : void {
+        utils.dassert(obj._tracker === this);
+        var t = this;
 
-      this._type = types.TypeStore.instance().type(obj);
-
-      if (obj instanceof Array) {
-        trackArray(obj);
-      }
-
-      Object.defineProperty(obj, '_tracker', {
-        value: this
-      });
-
-      for (var prop in obj) {
-        track(obj, prop);
-      }
+        if (obj instanceof Array) {
+          arrayChanges(obj);
+        } else {
+          objectChanges(obj);
+        }
+      };
     }
-
-    /**
-     * Get the unique object id
-     * @return {string} A uuid for the object.
-     */
-    Tracker.prototype.id = function () {
-      return this._id;
-    };
-
-    Tracker.prototype.type = function () {
-      return this._type;
-    };
-
-
-    /**
-     * Get/Increment the object revision
-     * @param {number} by Optional increment to the revision.
-     * @return {number} The current revision.
-     */
-    Tracker.prototype.rev = function (by) {
-      if (by !== undefined)
-        this._rev += by;
-      return this._rev;
-    };
-
-    /**
-     * Collect chnages into underlying structures
-     * @param {number} obj The object to collect changes for.
-     */
-    Tracker.prototype.collect = function (obj) {
-      var t = this;
-      if (obj._tracker != this) {
-        throw new Error('Object/tracker mismatch');
-      }
-
-      if (obj instanceof Array) {
-        arrayChanges(obj);
-      } else {
-        objectChanges(obj);
-      }
-    };
-
-    /**
-     * Object tracker
-     */
-    exports.Tracker = Tracker;
 
     function lexSort(a, b) {
       var astr = a.toString();
@@ -125,8 +151,8 @@ module shared {
         enumerable: false,
         configurable: false,
         value: function () {
-          var t = arr._tracker;
-          Tracker.prototype.disable++;
+          var t : Tracker = arr._tracker;
+          t.tc().disable++;
 
           // Shift will 'untrack' our props so we have to record what
           // is currently being tracked and reapply this after the shift
@@ -139,8 +165,8 @@ module shared {
 
           // Record & perform the shift
           if (arr.length > 0) {
-            Tracker.prototype.cset.push({ obj: arr, shift: true, lasttx: t._lastTx });
-            t._lastTx = Tracker.prototype.cset.length - 1;
+            t.tc().cset().push({ obj: arr, shift: true, lasttx: t._lastTx });
+            t._lastTx = t.tc().cset().length - 1;
           }
           var r = Array.prototype.shift.apply(arr, arguments);
 
@@ -152,7 +178,7 @@ module shared {
               track(arr, key);
           }
 
-          Tracker.prototype.disable--;
+          t.tc().disable--;
           return r;
         }
       });
@@ -162,7 +188,7 @@ module shared {
         configurable: false,
         value: function () {
           var t = arr._tracker;
-          Tracker.prototype.disable++;
+          t.tc().disable++;
 
           // Cache which props are tracked
           var k = Object.keys(arr);
@@ -173,23 +199,23 @@ module shared {
 
           // Record the unshift
           if (arguments.length > 0) {
-            Tracker.prototype.cset.push({
+            t.tc().cset().push({
               obj: arr, unshift: true, size: arguments.length,
               lasttx: t._lastTx
             });
-            t._lastTx = Tracker.prototype.cset.length - 1;
+            t._lastTx = t.tc().cset().length - 1;
           }
           var r = Array.prototype.unshift.apply(arr, arguments);
 
           // Record writes of new data
           for (var i = 0; i < arguments.length; i++) {
             track(arr, i + '');
-            var v = newValue(arr[i], '');
-            Tracker.prototype.cset.push({
+            var v = serial.writeValue(t.tc(), arr[i], '');
+            t.tc().cset().push({
               obj: arr, write: i + '', value: v,
               lasttx: t._lastTx
             });
-            t._lastTx = Tracker.prototype.cset.length - 1;
+            t._lastTx = t.tc().cset().length - 1;
           }
 
           // Restore our tracking
@@ -200,7 +226,7 @@ module shared {
               track(arr, key);
           }
 
-          Tracker.prototype.disable--;
+          t.tc().disable--;
           return r;
         }
       });
@@ -210,7 +236,7 @@ module shared {
         configurable: false,
         value: function () {
           var t = arr._tracker;
-          Tracker.prototype.disable++;
+          t.tc().disable++;
 
           // Reverse keeps the tracking but does not reverse it leading
           // to lots of confusion, another hack required
@@ -222,8 +248,8 @@ module shared {
           tracked.reverse();
 
           // Record & perform the reverse
-          Tracker.prototype.cset.push({ obj: arr, reverse: true, lasttx: t._lastTx });
-          t._lastTx = Tracker.prototype.cset.length - 1;
+          t.tc().cset().push({ obj: arr, reverse: true, lasttx: t._lastTx });
+          t._lastTx = t.tc().cset().length - 1;
           var r = Array.prototype.reverse.apply(arr, arguments);
 
           // Recover tracking state
@@ -238,7 +264,7 @@ module shared {
             }
           }
 
-          Tracker.prototype.disable--;
+          t.tc().disable--;
           return r;
         }
       });
@@ -248,7 +274,7 @@ module shared {
         configurable: false,
         value: function () {
           var t = arr._tracker;
-          Tracker.prototype.disable++;
+          t.tc().disable++;
 
           // Now we are in trouble, sort is like reverse, it leaves tracking
           // at the pre-sort positions and we need to correct this by sorting
@@ -283,10 +309,10 @@ module shared {
           }
 
           // Best record it after all that
-          Tracker.prototype.cset.push({ obj: arr, sort: true, lasttx: t._lastTx });
-          t._lastTx = Tracker.prototype.cset.length - 1;
+          t.tc().cset().push({ obj: arr, sort: true, lasttx: t._lastTx });
+          t._lastTx = t.tc().cset().length - 1;
 
-          Tracker.prototype.disable--;
+          t.tc().disable--;
           return arr;
         }
       });
@@ -311,28 +337,29 @@ module shared {
       }
     }
 
-    function wrapProp(obj: any, prop: string, value: any, tracker: any): void {
+    // TODO: Should these use _tracker ?
+    function wrapProp(obj: any, prop: string, value: any, tracker: Tracker): void {
       Object.defineProperty(obj, prop, {
         enumerable: true,
         configurable: true,
         get: function () {
-          if (Tracker.prototype.disable === 0) {
+          if (tracker.tc().disable === 0) {
             if (value !== null && typeof value === 'object') {
               if (value instanceof serial.Reference) {
-                throw new serial.UnknownReference(tracker._id, prop, tracker.id());
+                throw new UnknownReference(tracker.id(), prop, tracker.id());
               }
-              Tracker.prototype.rset[value._tracker._id] = value._tracker._rev;
+              tracker.tc().rset()[value._tracker._id] = value._tracker._rev;
             }
           }
           return value;
         },
         set: function (setValue) {
-          if (Tracker.prototype.disable === 0) {
-            Tracker.prototype.disable++;
-            var newVal = newValue(setValue, '');
-            Tracker.prototype.cset.push({ obj: obj, write: prop, value: newVal, lasttx: tracker._lastTx });
-            tracker._lastTx = Tracker.prototype.cset.length - 1;
-            Tracker.prototype.disable--;
+          if (tracker.tc().disable === 0) {
+            tracker.tc().disable++;
+            var newVal = serial.writeValue(tracker.tc(), setValue, '');
+            tracker.tc().cset().push({ obj: obj, write: prop, value: newVal, lasttx: tracker._lastTx });
+            tracker._lastTx = tracker.tc().cset().length - 1;
+            tracker.tc().disable--;
           }
           value = setValue;
         }
@@ -354,89 +381,23 @@ module shared {
       }
     }
 
-    function newValuePrim(val, str) {
-      if (val === null) {
-        str += 'null';
-        return str;
-      }
-
-      if (val === undefined) {
-        str += 'undefined';
-        return str;
-      }
-
-      switch (typeof val) {
-        case 'number':
-        case 'boolean':
-          str += val.toString();
-          break;
-        case 'string':
-          str += "'" + val.toString() + "'";
-          break;
-      }
-      return str;
-    }
-
-    function newValueProps(obj, str) {
-      if (obj instanceof Array) {
-        str += '[';
-      } else {
-        str += '{';
-      }
-
-      var k = Object.keys(obj);
-      for (var i = 0; i < k.length; i++) {
-        str += "'" + k[i] + "':";
-        if (obj[k[i]] !== null && typeof obj[k[i]] == 'object') {
-          str = newValue(obj[k[i]], str);
-        } else {
-          str = newValuePrim(obj[k[i]], str);
-        }
-        if (i < k.length - 1)
-          str += ',';
-      }
-
-      if (obj instanceof Array) {
-        str += ']';
-      } else {
-        str += '}';
-      }
-      return str;
-    }
-
-    function newValue(val: any, str: string): string {
-      if (val !== null && typeof val === 'object') {
-        if (val._tracker !== undefined) {
-          str += '<' + val._tracker._id + '>';
-          return str;
-        }
-
-        var t = new Tracker(val);
-        str += '<' + val._tracker._id + '>';
-        Tracker.prototype.nset[val._tracker._id] = newValueProps(val, '');
-      } else {
-        str = newValuePrim(val, str);
-      }
-      return str;
-    }
-
     function objectChanges(obj) {
-      Tracker.prototype.disable++;
-
       var t = obj._tracker;
+      t.tc().disable++;
+
       var at = t._lastTx;
       var readset = [];
       var writeset = [];
       while (at !== -1) {
-        if (Tracker.prototype.cset[at].read !== undefined) {
-          var val = obj[Tracker.prototype.cset[at].read];
+        if (t.tc().cset()[at].read !== undefined) {
+          var val = obj[t.tc().cset()[at].read];
           if (val !== null && typeof (val) === 'object') {
             readset.unshift(val);
           }
         } else {
-          writeset.unshift(Tracker.prototype.cset[at]);
+          writeset.unshift(t.tc().cset()[at]);
         }
-        at = Tracker.prototype.cset[at].lasttx;
+        at = t.tc().cset()[at].lasttx;
       }
 
       var oldProps = utils.flatClone(t._type.props());
@@ -444,9 +405,9 @@ module shared {
       for (var i = 0; i < oldProps.length; i++) {
         if (!obj.hasOwnProperty(oldProps[i]) || !isTracked(obj, oldProps[i])) {
           var r: any = { obj: obj, del: oldProps[i], lasttx: t._lastTx };
-          Tracker.prototype.cset.push(r);
+          t.tc().cset().push(r);
           writeset.push(r);
-          t._lastTx = Tracker.prototype.cset.length - 1;
+          t._lastTx = t.tc().cset().length - 1;
         } else {
           var idx = newProps.indexOf(oldProps[i]);
           newProps[idx] = null;
@@ -455,21 +416,21 @@ module shared {
 
       for (var i = 0; i < newProps.length; i++) {
         if (newProps[i] !== null) {
-          var v = newValue(obj[newProps[i]], '');
+          var v = serial.writeValue(t.tc(),obj[newProps[i]], '');
           var r: any = { obj: obj, write: newProps[i], value: v, lasttx: t._lastTx };
-          Tracker.prototype.cset.push(r);
+          t.tc().cset().push(r);
           writeset.push(r);
-          t._lastTx = Tracker.prototype.cset.length - 1;
+          t._lastTx = t.tc().cset().length - 1;
         }
       }
 
-      Tracker.prototype.disable--;
+      t.tc().disable--;
     }
 
     function arrayChanges(obj) {
-      Tracker.prototype.disable++;
-
       var t = obj._tracker;
+      t.tc().disable++;
+
       var at = t._lastTx;
       var sorted = false;
       var readset = [];
@@ -477,31 +438,31 @@ module shared {
 
       // Build read & write sets
       while (at !== -1) {
-        if (Tracker.prototype.cset[at].read !== undefined) {
-          var val = obj[Tracker.prototype.cset[at].read];
+        if (t.tc().cset()[at].read !== undefined) {
+          var val = obj[t.tc().cset()[at].read];
           if (val !== null && typeof (val) === 'object') {
             readset.unshift(val);
           }
         } else if (sorted == false) {
-          if (Tracker.prototype.cset[at].sort !== undefined) {
-            var dead = Tracker.prototype.cset[at].lasttx;
-            var v = newValueProps(obj, '');
+          if (t.tc().cset()[at].sort !== undefined) {
+            var dead = t.tc().cset()[at].lasttx;
+            var v = serial.writeObject(t.tc(), obj, '');
             var r: any = { obj: obj, reinit: v, lasttx: -1 };
-            Tracker.prototype.cset[at] = r;
+            t.tc().cset()[at] = r;
             writeset.unshift(r);
 
             // Tidy up anything pre-sort
             while (dead !== -1) {
               var c = dead;
-              dead = Tracker.prototype.cset[dead].lasttx;
-              Tracker.prototype.cset[c] = null;
+              dead = t.tc().cset()[dead].lasttx;
+              t.tc().cset()[c] = null;
             }
             sorted = true;
           } else {
-            writeset.unshift(Tracker.prototype.cset[at]);
+            writeset.unshift(t.tc().cset()[at]);
           }
         }
-        at = Tracker.prototype.cset[at].lasttx;
+        at = t.tc().cset()[at].lasttx;
       }
 
       // Adjust old props for shifty shifting
@@ -532,15 +493,15 @@ module shared {
       for (var i = 0; i < oldProps.length; i++) {
         if (!obj.hasOwnProperty(oldProps[i])) {
           var r: any = { obj: obj, del: oldProps[i], lasttx: t._lastTx };
-          Tracker.prototype.cset.push(r);
+          t.tc().cset().push(r);
           writeset.push(r);
-          t._lastTx = Tracker.prototype.cset.length - 1;
+          t._lastTx = t.tc().cset().length - 1;
         } else if (!isTracked(obj, oldProps[i])) {
-          var v = newValue(obj[oldProps[i]], '');
+          var v = serial.writeValue(t.tc(), obj[oldProps[i]], '');
           var r: any = { obj: obj, write: oldProps[i], value: v, lasttx: t._lastTx };
-          Tracker.prototype.cset.push(r);
+          t.tc().cset().push(r);
           writeset.push(r);
-          t._lastTx = Tracker.prototype.cset.length - 1;
+          t._lastTx = t.tc().cset().length - 1;
           track(obj, oldProps[i]);
         }
       }
@@ -550,16 +511,16 @@ module shared {
       for (var i = 0; i < newProps.length; i++) {
         var idx = oldProps.indexOf(newProps[i]);
         if (idx == -1) {
-          var v = newValue(obj[newProps[i]], '');
+          var v = serial.writeValue(t.tc(), obj[newProps[i]], '');
           var r = { obj: obj, write: newProps[i], value: v, lasttx: t._lastTx };
-          Tracker.prototype.cset.push(r);
+          t.tc().cset().push(r);
           writeset.push(r);
-          t._lastTx = Tracker.prototype.cset.length - 1;
+          t._lastTx = t.tc().cset().length - 1;
           track(obj, newProps[i]);
         }
       }
 
-      Tracker.prototype.disable--;
+      t.tc().disable--;
     }
 
   } // tracker

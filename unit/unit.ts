@@ -1,2 +1,5 @@
-/// <reference path='../defs/node-0.8.d.ts' />
-/// <reference path='../lib/work.ts' />
+/// <reference path='test-serial.ts' />
+/// <reference path='test-tracker.ts' />
+
+exports.serial = testserial;
+exports.tracker = testtracker;

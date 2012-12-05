@@ -32,7 +32,6 @@
   </ItemGroup>
   <ItemGroup>
     <TypeScriptCompile Include="test-router.ts" />
-    <TypeScriptCompile Include="test-tracker.ts" />
   </ItemGroup>
   <ItemGroup>
     <TypeScriptCompile Include="test-traverse.ts" />
@@ -48,9 +47,6 @@
   </ItemGroup>
   <ItemGroup>
     <TypeScriptCompile Include="import.ts" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="test-work.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />
