@@ -27,10 +27,6 @@
     <RootNamespace>tshared</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <TypeScriptCompile Include="test-types.ts" />
-    <TypeScriptCompile Include="test-utils.ts" />
-  </ItemGroup>
-  <ItemGroup>
     <TypeScriptCompile Include="test-router.ts" />
   </ItemGroup>
   <ItemGroup>

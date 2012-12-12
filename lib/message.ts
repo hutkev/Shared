@@ -12,7 +12,6 @@ module shared {
 
     var dassert = utils.dassert;
     var cluster = require('cluster');
-    var util = require('util');
     var workerno = cluster.worker ? cluster.worker.uniqueID : 0;
 
     /**
@@ -80,16 +79,22 @@ module shared {
     }
 
     export function setTo(msg: Message, addr: Address) {
-      msg.from_rid = addr.rid;
-      msg.from_worker = addr.worker;
+      utils.dassert(utils.isObject(msg));
+      utils.dassert(utils.isObject(addr));
+      msg.to_rid = addr.rid;
+      msg.to_worker = addr.worker;
     }
 
     export function setFrom(msg: Message, addr: Address) {
+      utils.dassert(utils.isObject(msg));
+      utils.dassert(utils.isObject(addr));
       msg.from_rid = addr.rid;
       msg.from_worker = addr.worker;
     }
 
     export function replyTo(to: Message, from: Message) {
+      utils.dassert(utils.isObject(to));
+      utils.dassert(utils.isObject(from));
       to.to_rid = from.from_rid;
       to.to_worker = from.from_worker;
     }

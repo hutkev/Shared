@@ -20,11 +20,17 @@ module shared {
     var uuidPat = new RegExp(uuidStr);
 
     export function UID(): uid {
-      return uuid.v1();
+      return new String(uuid.v1());
     }
 
     export function isUID(a: uid) {
       return isValue(a) && uuidPat.test(a.toString());
+    }
+
+    export function makeUID(id: string) {
+      var uid = new String(id);
+      dassert(isUID(uid));
+      return uid;
     }
 
     /*

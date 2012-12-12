@@ -12,11 +12,10 @@
 /// <reference path='tracker.ts' />
 /// <reference path='shared.ts' />
 
-exports.Store = shared.main.Store;
-exports.primaryStore = shared.main.Store.primaryStore;
+exports.createStore = shared.main.createStore;
 
-shared.utils.defaultLogger().enableDebugLogging('ROUTER');
-shared.utils.defaultLogger().enableDebugLogging('STORE');
+//shared.utils.defaultLogger().enableDebugLogging('ROUTER');
+//shared.utils.defaultLogger().enableDebugLogging('STORE');
 shared.utils.enableAsserts(true);
 
 exports.tests = {};

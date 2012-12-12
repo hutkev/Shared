@@ -7,52 +7,39 @@
 /// <reference path='router.ts' />
 /// <reference path='types.ts' />
 /// <reference path='serial.ts' />
+/// <reference path='mtx.ts' />
+
 
 module shared {
   export module main {
 
-    var Tracker = shared.tracker.Tracker;
-    var router = shared.router;
-
     var cluster = require('cluster');
+    var rootUID = utils.makeUID('00000000-0000-0000-0000-000000000001');
 
-    export class Cache implements tracker.TrackCache extends utils.UniqueObject {
-      public disable: number =0;
-      private _cset = [];
-      private _rset = {};
-      private _nset = [];
-
-      cset() { return this._cset; }
-      rset() { return this._rset; }
-      nset() { return this._nset; }
-
-      private tracker(value: any): tracker.Tracker {
-        utils.dassert(utils.isObjectOrArray(value));
-        if (value._tracker === undefined) {
-          // Must be new object
-          var t = new tracker.Tracker(this, value);
-
-          // TODO: Maybe should just save obj, serialze later?
-          t.tc().nset()[t.id().toString()] = serial.writeObject(this, value, '');
-        }
-        return value._tracker;
-      }
-
-      valueId(value: any): utils.uid {
-        return this.tracker(value).id();
-      }
-
-      valueRev(value: any) : number {
-        return this.tracker(value).rev();
+    /*
+     * Create a store, possibly the primary if running on a cluster master
+     * node and a primary has not yet been started.
+     */
+    export function createStore() : Store {
+      if (cluster.isMaster && PrimaryStore.primaryStore() === null) {
+        return new PrimaryStore();
+      } else {
+        return new SecondaryStore();
       }
     }
 
-    export class Store implements router.Receiver extends Cache {
+    export interface Store extends router.Receiver {
+      save(handler: (store: any) => void , callback: (success: bool) => void ): void;
+
+      store(): any;
+      commit(): bool;
+    }
+
+    export class PrimaryStore implements Store extends mtx.mtxFactory {
 
       static _primaryStore: Store = null; // Who is acting as primary
       private _router: router.Router;     // Message router
       private _logger: utils.Logger;      // Default logger
-      private _pending: any[] = [];       // Outstanding work queue
       private _root: any = null;          // Root object
       private _ostore: utils.Map = null;  // Object lookup
 
@@ -62,34 +49,243 @@ module shared {
 
       constructor () {
         super();
-        this._logger = utils.defaultLogger();
 
-        // Always use cluster router for now
-        // First in the master node is nominated primary
-        this._router = router.ClusterRouter.instance();
-        if (cluster.isMaster && Store._primaryStore === null) {
-          Store._primaryStore = this;
+        // Setup as one and only primary in cluster
+        if (cluster.isMaster) {
+          if (PrimaryStore._primaryStore === null) {
+            PrimaryStore._primaryStore = this;
+          } else {
+            utils.defaultLogger().fatal('A Primary store has already been started');
+          }
         }
 
         // Init
+        this._logger = utils.defaultLogger();
+        this._router = router.ClusterRouter.instance();
         this._router.register(this);
         this._ostore = new utils.Map(utils.hash);
-        if (this.isPrimaryStore()) {
-          // Set up root
-          this._root = new Object();
-          new tracker.Tracker(this, this._root);
-          this._ostore.insert(this._root._tracker.id(), this._root);
-        } else {
-          // Get root
-          this._pending.push({ action: 'get', id: null });
-          this.nextStep();
-        }
-        this._logger.info('%s: Store started (primary=%s)', this.id(),
-          this.isPrimaryStore());
+        this._root = new Object();
+        new tracker.Tracker(this, this._root, rootUID, 0);
+        this._ostore.insert(this._root._tracker.id(), this._root);
+        this._logger.info('%s: Store started (primary=true)', this.id());
       }
 
-      isPrimaryStore(): bool {
-        return Store._primaryStore === this;
+      save(handler: (root: any) => void , callback: (success: bool) => void): void {
+        handler(this.store());
+        callback(this.commit());
+      }
+
+      /*
+       * This is only public for debugging purposes.
+       */
+      store(): any {
+        this.markRead(this._root);
+        return this._root;
+      }
+
+      /*
+       * This is only public for debugging purposes.
+       */
+      commit(): bool {
+        var mtx = this.mtx(this._ostore,true);
+        console.log(mtx);
+        this._logger.debug('STORE', '%s: Commiting local mtx to primary', this.id(), mtx);
+        this.processMtxLocal(mtx);
+        return true;
+      }
+
+      private address(): message.Address {
+        return new message.Address(this.id());
+      }
+
+      private receive(msg: message.Message): void {
+        utils.dassert(utils.isObject(msg));
+        this._logger.debug('STORE', '%s: Dispatch primary', this.id(), msg);
+
+        switch (msg.body.detail) {
+          case 'get':
+            this._logger.debug('STORE', '%s: Attempting get', this.id(), msg);
+            var obj = this._ostore.find(msg.body.id)
+            if (obj === null) {
+              this._logger.fatal('STORE', '%s: No object for id: %s', msg.body.id);
+            }
+            this.replyMessage(msg, {
+              detail: 'update', id: msg.body.id, rev: obj._tracker.rev(),
+              obj: serial.writeObject(this, obj, '', false)
+            });
+            return;
+
+          case 'mtx':
+            this._logger.debug('STORE', '%s: Attempting commit', this.id(), msg);
+            if (this.processMtxRemote(msg.body.mtx)) {
+              this.replyMessage(msg, { detail: 'ok' });
+              this._logger.debug('STORE', '%s: Commit passed', this.id());
+            } else {
+              this._logger.debug('STORE', '%s: Commit failed', this.id());
+            }
+            return;
+
+          default:
+            this._logger.fatal('STORE', '%s: Message handling failed', this.id(), msg);
+        }
+      }
+
+      private unknownHandler(msg: message.Message): bool {
+        this.receive(msg);
+        return true;
+      }
+
+      private fatal(fmt: string, ...args: any[]): void {
+      }
+
+      private replyMessage(inmsg: message.Message, body: any) {
+        var msg = message.getMessage();
+        message.replyTo(msg, inmsg);
+        message.setFrom(msg, this.address())
+        msg.body = body;
+        this._logger.debug('STORE', '%s: Replying', this.id(), msg);
+        this._router.send(msg);
+        message.returnMessage(msg);
+      }
+
+      private processMtxLocal(mtx: any): void {
+        utils.dassert(utils.isArray(mtx) && mtx.length ===3)
+
+        // Just check versions if in debug
+        if (utils.assertsEnabled()) {
+          var rset = mtx[0];
+          var rkeys = Object.keys(rset);
+          for (var i = 0; i < rkeys.length; i++) {
+            var o = this._ostore.find(rkeys[i]);
+            utils.dassert(o != null);
+            utils.dassert(o._tracker._rev === rset[rkeys[i]]);
+          }
+        }
+
+        // Load new objects
+        var nset = mtx[1];
+        var nkeys = Object.keys(nset);
+        for (var i = 0; i < nkeys.length; i++) {
+          var key = nkeys[i];
+          utils.dassert(this._ostore.find(key) === null);
+
+          new tracker.Tracker(this, nset[key], key, 0);
+          this._ostore.insert(key, nset[key]);
+        }
+
+        // Inc revs for changed objects
+        var cset = mtx[2];
+        var wset = new utils.StringSet();
+        for (var i = 0; i < cset.length; i++) {
+          var e = cset[i];
+          var o = this._ostore.find(e.id);
+          if (o === null)
+            this._logger.fatal('STORE', '%s: cset contains unknown object', e.id);
+          if (!wset.has(e.id)) {
+            wset.put(e._id);
+            o._tracker._rev++;
+          }
+        }
+      }
+
+      private processMtxRemote(mtx: any): bool {
+        utils.dassert(utils.isArray(mtx) && mtx.length ===3)
+
+        // Cmp rset
+        var rset = mtx[0];
+        var rkeys = Object.keys(rset);
+        for (var i = 0; i < rkeys.length; i++) {
+          var o = this._ostore.find(rkeys[i]);
+          if (o !== null) {
+            if (o._tracker._rev != rset[rkeys[i]])
+              return false;
+          } else {
+            this._logger.fatal('STORE', '%s: cmp set contains unknown object', rkeys[i]);
+          }
+        }
+
+        // Load in nset
+        var nset = mtx[1];
+        var nkeys = Object.keys(nset);
+        for (var i = 0; i < nkeys.length; i++) {
+          var key = nkeys[i];
+          utils.dassert(this._ostore.find(key) === null);
+
+          var obj = serial.readObject(nset[key]);
+          new tracker.Tracker(this, obj, key, 0);
+          this._ostore.insert(key, obj);
+        }
+
+        // Write changes & inc revs
+        var cset = mtx[2];
+        var wset = new utils.StringSet();
+        for (var i = 0; i < cset.length; i++) {
+          var e = cset[i];
+
+          // Write prop
+          if (e.write !== undefined) {
+            var o = this._ostore.find(e.id);
+            if (o === null)
+              this._logger.fatal('STORE', '%s: cset contains unknown object', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e._id);
+              o._tracker._rev++;
+            }
+            o[e.write] = serial.readValue(e.value);
+          }
+
+          // Delete Prop
+          if (e.del !== undefined) {
+            var o = this._ostore.find(e.id);
+            if (o === null)
+              this._logger.fatal('STORE', '%s: cset contains unknown object', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e._id);
+              o._tracker._rev++;
+            }
+            delete o[e.prop];
+          }
+        }
+
+        return true;
+      }
+    }
+
+    export class SecondaryStore implements Store extends mtx.mtxFactory {
+
+      private _router: router.Router;     // Message router
+      private _logger: utils.Logger;      // Default logger
+      private _pending: any[] = [];       // Outstanding work queue
+      private _root: any = null;          // Root object
+      private _ostore: utils.Map = null;  // Object lookup
+
+      constructor () {
+        super();
+        this._logger = utils.defaultLogger();
+
+        // Init
+        this._router = router.ClusterRouter.instance();
+        this._router.register(this);
+        this._ostore = new utils.Map(utils.hash);
+        this._root = new Object();
+        new tracker.Tracker(this, this._root, rootUID, 0);
+        this._ostore.insert(this._root._tracker.id(), this._root);
+        this._logger.info('%s: Store started (primary=false)', this.id());
+      }
+
+      store(): any {
+        this.markRead(this._root);
+        return this._root;
+      }
+
+      commit(): bool {
+
+        return true;
+      }
+
+      save(handler: (root: any) => void , callback: (success: bool) => void): void {
+        this._pending.push({ action: 'save', fn: handler, cb: callback});
+        this.nextStep();
       }
 
       address(): message.Address {
@@ -102,11 +298,7 @@ module shared {
 
       receive(msg: message.Message): void {
         var ok: bool;
-        if (this.isPrimaryStore()) {
-          ok = this.dispatchPrimaryMsg(msg);
-        } else {
-          ok = this.dispatchSecondaryMsg(msg);
-        }
+        ok = this.dispatchSecondaryMsg(msg);
         if (!ok) {
           this._logger.fatal('STORE', '%s: Message handling failed', this.id(), msg);
         }
@@ -114,18 +306,10 @@ module shared {
 
       unknownHandler(msg: message.Message): bool {
         this._logger.debug('STORE', '%s: unknownHandler called', this.id(), msg);
-        if (this.isPrimaryStore()) {
-          return this.dispatchPrimaryMsg(msg);
-        }
-        return false;
+        return true;
       }
 
       fatal(fmt: string, ...args: any[]): void {
-      }
-
-      root(): any {
-        this.rset()[this._root._tracker._id] = this._root._tracker._rev;
-        return this._root;
       }
 
       private sendPrimaryStore(body: any) {
@@ -134,16 +318,6 @@ module shared {
         message.setFrom(msg, this.address())
         msg.body = body;
         this._logger.debug('STORE', '%s: Sending to primary', this.id(), msg);
-        this._router.send(msg);
-        message.returnMessage(msg);
-      }
-
-      private replyMessage(inmsg: message.Message, body: any) {
-        var msg = message.getMessage();
-        message.replyTo(msg, inmsg);
-        message.setFrom(msg, this.address())
-        msg.body = body;
-        this._logger.debug('STORE', '%s: Replying', this.id(), msg);
         this._router.send(msg);
         message.returnMessage(msg);
       }
@@ -165,7 +339,9 @@ module shared {
               try {
                 r.fn(this._root);
                 r.action = 'waitsave';
-                this.sendChanges();
+                // Push to master (there is always something to do)
+                this.sendPrimaryStore({
+                  detail: 'mtx', mtx: this.mtx(this._ostore)});
               } catch (e) {
                 // Cache miss when trying to commit
                 if (e instanceof tracker.UnknownReference) {
@@ -196,50 +372,6 @@ module shared {
         }
       }
 
-      save(handler: (root: any) => void , callback: (success: bool) => void , idx): void {
-        this._pending.push({ action: 'save', fn: handler, cb: callback, idx: idx });
-        this.nextStep();
-      }
-
-      // To master  
-      dispatchPrimaryMsg(msg: message.Message): bool {
-        utils.dassert(utils.isObject(msg));
-        this._logger.debug('STORE', '%s: Dispatch primary', this.id(), msg);
-
-        switch (msg.body.detail) {
-          case 'get':
-            this._logger.debug('STORE', '%s: Attempting get', this.id(), msg);
-            var obj;
-            if (msg.body.id === null) {
-              obj = this._root;
-            } else {
-              var e = this._ostore.find(msg.body.id)
-              if (e !== null)
-                obj = e;
-              else
-                this._logger.fatal('STORE', '%s: No object for id: %s', msg.body.id);
-            }
-            this.replyMessage(msg, {
-              detail: 'update', id: msg.body.id, rev: obj._tracker.rev(),
-              obj: serial.writeObject(this, obj, '', true)
-            });
-            return true;
-
-          case 'mtx':
-            this._logger.debug('STORE', '%s: Attempting commit', this.id(), msg);
-            if (this.processMtx(msg.body.mtx)) {
-              this.replyMessage(msg, { detail: 'ok' });
-              this._logger.debug('STORE', '%s: Commit passed', this.id());
-            } else {
-              this._logger.debug('STORE', '%s: Commit failed', this.id());
-            }
-            return true;
-
-          default:
-            return false;
-        }
-      };
-
       // To worker  
       dispatchSecondaryMsg(msg: message.Message): bool {
         utils.dassert(utils.isObject(msg));
@@ -254,16 +386,8 @@ module shared {
             }
 
             var proto = this._ostore.find(msg.body.id);
-            if (proto) {
-              proto._tracker._rev = msg.body.rev;
-            }
-
             var obj = serial.readObject(msg.body.obj, proto);
-            this._ostore.insert(obj._tracker.id(), obj);
-            if (msg.body.id === null) {
-              this._logger.debug('STORE', '%s: Bootstraped root node', this.id(), obj);
-              this._root = obj;
-            }
+            obj._tracker._rev = msg.body.rev;
 
             var e = this._pending[0];
             if (e.assignid !== undefined) {
@@ -289,81 +413,6 @@ module shared {
             return false;
         }
       };
-
-      processMtx(mtx): bool {
-        // Cmp rset
-        var rset = mtx[0];
-        var rkeys = Object.keys(rset);
-        for (var i = 0; i < rkeys.length; i++) {
-          var o = this._ostore.find(rkeys[i]);
-          if (o !== null) {
-            if (o._tracker._rev != rset[rkeys[i]])
-              return false;
-          } else {
-            throw new Error('Missing object');
-          }
-        }
-
-        // Write changes & inc revs
-        var cset = mtx[2];
-        var wset = {};
-        for (var i = 0; i < cset.length; i++) {
-          var e = cset[i];
-          if (e.write !== undefined) {
-            var o = this._ostore.find(e.id);
-            if (o === null)
-              throw new Error('Missing object');
-            if (!wset.hasOwnProperty(e.id)) {
-              wset[e.id] = 0;
-              o._tracker._rev++;
-            }
-            o[e.write] = serial.readValue(e.value);
-          }
-        }
-
-        return true;
-      }
-
-      /**
-       * Send mini-TX
-       */
-      sendChanges(): void {
-
-        // Collect over accessed objects
-        var rkeys = Object.keys(this.rset());
-        for (var i = 0; i < rkeys.length; i++) {
-          var o = this._ostore.find(rkeys[i]);
-          if (o !== null) {
-            o._tracker.collect(o);
-          } else {
-            // TODO: ?
-            throw new Error('Unexpected object in read list');
-          }
-        }
-
-        // Collect written objects and up rev them
-        var wkeys = {};
-        for (var i = 0; i < this.cset().length; i++) {
-          var e = this.cset()[i];
-          if (e !== null) {
-            var t = e.obj._tracker;
-            if (wkeys.hasOwnProperty(t._id)) {
-              wkeys[t._id] = 0;
-              t._ver++;
-            }
-            e.id = t._id;
-            delete e.obj;
-            delete e.lasttx;
-          }
-        }
-
-        // Push to master (there is always something to do)
-        this.sendPrimaryStore({
-          detail: 'mtx',
-          mtx: [<any>this.rset(), this.nset(), this.cset()]
-        });
-      }
     }
-
   } // main
 } // shared

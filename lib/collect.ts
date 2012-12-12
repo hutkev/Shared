@@ -22,15 +22,21 @@ module shared {
     }
 
     export class Map {
-      private _hashfn;
-      public _tree;
+      private _hashfn : (a:any) => number;
+      private _size: number;
+      private _tree;
 
       constructor(hashfn: (a:any) => number) {
         dassert(isValue(hashfn));
+        this._size = 0;
         this._hashfn = hashfn;
         this._tree = new Tree(function (a:MapRow, b:MapRow) {
           return a.hash - b.hash;
         });
+      }
+
+      size(): number {
+        return this._size;
       }
 
       find(key: any) : any {
@@ -69,6 +75,7 @@ module shared {
         } else {
           this._tree.insert({ hash: h, values: [{ key: key, value: value }] } );
         }
+        this._size++;
         return true;
       }
 
@@ -82,6 +89,7 @@ module shared {
           for (var i = 0; i < entries.values.length; i++) {
             if (isEqual(key, entries.values[i].key)) {
               entries.values[i].key = null;
+              this._size--;
               return true;
             }
           }
@@ -111,7 +119,7 @@ module shared {
       private _map : Map;
       private _id: number;
 
-      constructor (names: string[]) {
+      constructor (names: string[]=[]) {
         this._map = new Map(function (k: any) {
           return utils.hash(k.toString());
         });

@@ -33,7 +33,11 @@
     <TypeScriptCompile Include="test-tracker.ts" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="test-router.ts" />
+    <Content Include="test-commit.ts" />
     <Content Include="test-serial.ts" />
+    <Content Include="test-types.ts" />
+    <Content Include="test-utils.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />

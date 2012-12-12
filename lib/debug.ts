@@ -233,6 +233,13 @@ module shared {
     }
 
     /**
+     * Are assert enabled?
+     */
+    export function assertsEnabled() : bool {
+      return _assertsEnabled;
+    }
+
+    /**
      * Switchable assert handler.
      */
     export function dassert(test: bool) {

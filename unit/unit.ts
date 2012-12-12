@@ -1,5 +1,13 @@
+/// <reference path='test-utils.ts' />
+/// <reference path='test-types.ts' />
+/// <reference path='test-router.ts' />
 /// <reference path='test-serial.ts' />
 /// <reference path='test-tracker.ts' />
+/// <reference path='test-commit.ts' />
 
+exports.utils = testutils;
+exports.types = testtypes;
+exports.router = testrouter;
 exports.serial = testserial;
 exports.tracker = testtracker;
+exports.commit = testcommit;
