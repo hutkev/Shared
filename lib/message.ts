@@ -29,7 +29,7 @@ module shared {
 
       constructor (rid: utils.uid, worker?: number) {
         this.rid = rid;
-        this.worker = worker ? worker : workerno;
+        this.worker = utils.isValue(worker) ? worker : workerno;
       }
 
       static networkAddress() {

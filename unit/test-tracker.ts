@@ -1,27 +1,20 @@
 /// <reference path='../defs/node-0.8.d.ts' />
-/// <reference path='../lib/shared.ts' />
+/// <reference path='../lib/store.ts' />
 
 module testtracker {
 
   import utils = shared.utils;
   import tracker = shared.tracker;
   
-  var store: shared.main.PrimaryStore;
+  var store: shared.store.PrimaryStore;
 
   function reset() {
-    shared.main.PrimaryStore._primaryStore = null;
-    store = new shared.main.PrimaryStore();
+    if (shared.store.PrimaryStore._primaryStore !== null)
+      shared.store.PrimaryStore._primaryStore.stop();
+    shared.store.PrimaryStore._primaryStore = null;
+    store = new shared.store.PrimaryStore();
+    utils.defaultLogger().disableDebugLogging();
   }
-
-  /*
-  export function methods(test) {
-    reset();
-    var obj = [];
-    var t = new tracker.Tracker(store,obj);
-    test.ok(typeof t.id === 'function');
-    test.ok(typeof t.rev === 'function');
-    test.done();
-  };
 
   export function illegaltype(test) {
     reset();
@@ -342,7 +335,7 @@ module testtracker {
     test.ok(obj, [4, 5, 3, 1]);
     test.done();
   };
-  */
+  
   export function pushNumberProp(test) {
     reset();
     var obj: any = {};
@@ -944,4 +937,16 @@ module testtracker {
 
     test.done();
   };
+
+  export function xstore(test) {
+    reset();
+    var s2 = new shared.store.SecondaryStore();
+    var obj = {};
+    test.ok(typeof new tracker.Tracker(s2,obj) === 'object');
+
+    test.throws(function () { store.valueId(obj) });
+
+    test.done();
+  }
+
 } // testtracker

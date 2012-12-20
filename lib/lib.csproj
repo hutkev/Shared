@@ -27,7 +27,8 @@
     <RootNamespace>tshared</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <TypeScriptCompile Include="shared.ts" />
+    <TypeScriptCompile Include="primary.ts" />
+    <TypeScriptCompile Include="secondary.ts" />
     <TypeScriptCompile Include="types.ts" />
     <TypeScriptCompile Include="id.ts" />
     <TypeScriptCompile Include="import.ts" />
@@ -42,6 +43,9 @@
   </ItemGroup>
   <ItemGroup>
     <TypeScriptCompile Include="mtx.ts" />
+  </ItemGroup>
+  <ItemGroup>
+    <TypeScriptCompile Include="store.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />

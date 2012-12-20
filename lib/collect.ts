@@ -62,8 +62,8 @@ module shared {
         if (entries !== null) {
           var free = null;
           for (var i = 0; i < entries.values.length; i++) {
-            if (free === null && entries.values[i].key === null) {
-              free = i;
+            if (entries.values[i].key === null) {
+              if (free === null) free = i;
             } else if (isEqual(key, entries.values[i].key)) {
               return false;
             }
@@ -89,6 +89,7 @@ module shared {
           for (var i = 0; i < entries.values.length; i++) {
             if (isEqual(key, entries.values[i].key)) {
               entries.values[i].key = null;
+              entries.values[i].value = null;
               this._size--;
               return true;
             }
@@ -102,7 +103,7 @@ module shared {
         while (it.next()) {
           var row: MapRow = it.data();
           for (var i = 0; i < row.values.length; i++) {
-            if (row.values[i] !== null)
+            if (row.values[i].key !== null)
               if (!handler(row.values[i].key,row.values[i].value))
                 return false;
           }
@@ -110,6 +111,10 @@ module shared {
         return true;
       }
 
+      removeAll() : void {
+        this._tree.clear();
+        this._size = 0;
+      }
     }
 
     /**
@@ -147,6 +152,20 @@ module shared {
 
       remove(key: string): bool {
         return this._map.remove(key);
+      }
+
+      size(): number {
+        return this._map.size();
+      }
+
+      removeAll(): void {
+        return this._map.removeAll();
+      }
+
+      apply(handler: (value: any) => bool): bool {
+        return this._map.apply(function (key: any, value: any) {
+          return handler(key);
+        });
       }
     }
 
@@ -200,6 +219,34 @@ module shared {
         dassert(!this.empty());
         return this._elems.shift();
       }
+
+      array(): any[] {
+        return this._elems;
+      }
+
+      first( match: (value:any) => bool): any {
+        for (var i = 0; i < this._elems.length; i++) {
+          if (match(this._elems[i]))
+            return this._elems[i];
+        }
+        return null;
+      }
+
+      filter( match: (value:any) => bool): Queue {
+        var matched = new Queue();
+        for (var i = 0; i < this._elems.length; i++) {
+          if (match(this._elems[i]))
+            matched.push(this._elems[i]);
+        }
+        return matched;
+      }
+
+      apply( func: (value:any) => void): void {
+        for (var i = 0; i < this._elems.length; i++) {
+          func(this._elems[i]);
+        }
+      }
+
     }
 
 

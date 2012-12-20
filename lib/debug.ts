@@ -85,6 +85,10 @@ module shared {
         }
       }
 
+      public disableDebugLogging(): void {
+        this._debug.removeAll();
+      }
+
       public debug(component: string, fmt: string, ...msgs: any[]): void {
         if (this.isDebugLogging(component)) {
           var f = component + ': ' + fmt;
@@ -133,7 +137,7 @@ module shared {
           if (x === null || typeof x !== 'object') {
             str += ' ' + x + '\n';
           } else {
-            str += ' ' + util.inspect(x,true,null) + '\n';
+            str += ' ' + JSON.stringify(x,null,' ') + '\n';
           }
         }
         return str;

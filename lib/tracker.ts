@@ -51,7 +51,8 @@ module shared {
        * easy to create linked lists of changes for a specific object to
        * aid post-processing speed.
        */
-      addWrite(obj: any, prop: string, value: any, lasttx: number) : number;
+      addNew(obj: any, prop: string, value: any, lasttx: number) : number;
+      addWrite(obj: any, prop: string, value: any, last: any, lasttx: number) : number;
       addDelete(obj: any, prop: string, lasttx: number): number;
       addReverse(obj: any, lasttx: number): number;
       addSort(obj: any, lasttx: number): number;
@@ -196,11 +197,32 @@ module shared {
       };
 
       /**
+       * Set object rev to a value, must be >= to existing rev
+       */
+      setRev(to: number) : number {
+        if (to >= this._rev)
+          this._rev = to;
+        return this._rev;
+      };
+
+      /*
+       * has a change been recorded against the object
+       */
+      hasChanges() : bool {
+        return (this._lastTx != -1);
+      }
+
+      /**
        * Change notification handlers called to record changes
        */
-      addWrite(obj: any, prop: string, value: any) {
+      addNew(obj: any, prop: string, value: any) {
         utils.dassert(getTracker(obj) === this);
-        this._lastTx = this.tc().addWrite(obj, prop, value, this._lastTx);
+        this._lastTx = this.tc().addNew(obj, prop, value, this._lastTx);
+      };
+
+      addWrite(obj: any, prop: string, value: any, last: any) {
+        utils.dassert(getTracker(obj) === this);
+        this._lastTx = this.tc().addWrite(obj, prop, value, last, this._lastTx);
       };
 
       addDelete(obj: any, prop: string) { 
@@ -228,6 +250,19 @@ module shared {
         this._lastTx = this.tc().addUnshift(obj, size, this._lastTx);
       }
 
+      /*
+       * Make sure all properties are being tracked
+       */
+      retrack(obj: any) {
+        utils.dassert(getTracker(obj) === this);
+        for (var prop in obj) {
+          if (!isPropTracked(obj, prop)) {
+            this.track(obj, prop);
+          }
+        }
+        this._type = types.TypeStore.instance().type(obj);
+      }
+
       /**
        * Wrap a property for get/set tracking
        */
@@ -250,6 +285,18 @@ module shared {
         utils.dassert(getTracker(obj) === this);
         this._rev += 1;
         this._type = types.TypeStore.instance().type(obj);
+      }
+
+      /**
+       * Down rev (undo) an object recording new properties
+       */
+      downrev(obj) {
+        utils.dassert(getTracker(obj) === this);
+        if (this._lastTx !== -1) {
+          this._lastTx = -1;
+          this._rev -= 1;
+          this._type = types.TypeStore.instance().type(obj);
+        }
       }
     }
 
@@ -324,7 +371,7 @@ module shared {
           for (var i = 0; i < arguments.length; i++) {
             t.track(arr, i + '');
             var v = serial.writeValue(t.tc(), arr[i], '');
-            t.addWrite(arr, i+'', v);
+            t.addNew(arr, i+'', v);
           }
 
           // Restore our tracking
@@ -442,7 +489,8 @@ module shared {
           if (tracker.tc().disable === 0) {
             if (value !== null && typeof value === 'object') {
               if (value instanceof serial.Reference) {
-                throw new UnknownReference(tracker.id(), prop, tracker.id());
+                var ref: serial.Reference = value;
+                throw new UnknownReference(tracker.id(), prop, ref.id());
               }
               if (isTracked(value))
                 tracker.tc().markRead(value);
@@ -454,7 +502,7 @@ module shared {
           if (tracker.tc().disable === 0) {
             tracker.tc().disable++;
             var newVal = serial.writeValue(tracker.tc(), setValue, '');
-            tracker.addWrite(obj, prop, newVal);
+            tracker.addWrite(obj, prop, newVal, value);
             tracker.tc().disable--;
           }
           value = setValue;

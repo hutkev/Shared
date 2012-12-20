@@ -116,26 +116,12 @@ module shared {
       return to;
     }
 
-    /*
-      var uuid = str.substring(1, 37);
-      if (lookup === true) {
-        obj = this._ostore.find(uuid);
-      }
-
-      // Update/Create tracker
-      if (obj._tracker !== undefined) {
-        obj._tracker._rev = rev;
-      } else {
-        new Tracker(this, obj, uuid, rev);
-      }
-    */
-
     export function readObject(str: string, proto?: any) : any {
       utils.dassert(str.length >1 && 
         (str.charAt(0) === '[' || str.charAt(0) === '{') &&
         (str.charAt(str.length-1) === ']' || str.charAt(str.length-1) === '}'))
 
-      // Check we have a proto & its the right type
+      // Check is we have a proto & its the right type
       if (str.charAt(0) === '{') {
         if (!utils.isValue(proto)) {
           proto = {};

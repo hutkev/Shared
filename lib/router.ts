@@ -89,7 +89,7 @@ module shared {
         } else {
           this._routes = new utils.Map(utils.hash);
         }
-        this._logger.info('Cluster router started, cid: %d.', workerno);
+        this._logger.debug('ROUTER','Cluster router started, cid: %d.', workerno);
 
         // Listen for interesting events
         var that = this;
@@ -178,7 +178,8 @@ module shared {
         }
 
         // Drop from lookup
-        this._receivers.remove(rid);
+        var ok = this._receivers.remove(rid);
+        utils.dassert(ok);
         if (cluster.isMaster) {
           this._routes.remove(rid);
         } else {
@@ -198,7 +199,7 @@ module shared {
       networkMessage(msg: message.Message): bool {
 
         // Maybe just a routing message
-        if (msg.body === null) {
+        if (cluster.isMaster && msg.body === null) {
           this._routes.remove(msg.from_rid);
           if (msg.from_worker !== 0) {
             this._routes.insert(msg.from_rid, msg.from_worker);

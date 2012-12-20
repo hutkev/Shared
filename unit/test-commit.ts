@@ -1,19 +1,26 @@
 /// <reference path='../defs/node-0.8.d.ts' />
-/// <reference path='../lib/shared.ts' />
+/// <reference path='../lib/store.ts' />
 
 module testcommit {
 
   import utils = shared.utils;
   import message = shared.message;
-  import mod = shared.main;
+  import mod = shared.store;
 
-  function newPrimary() {
+  var util = require('util');
+
+  function newPrimary() : shared.store.PrimaryStore {
+    if (mod.PrimaryStore._primaryStore != null)
+      mod.PrimaryStore._primaryStore.stop();
     mod.PrimaryStore._primaryStore = null;
+    utils.defaultLogger().enableDebugLogging('STORE');
+    //utils.defaultLogger().enableDebugLogging('ROUTER');
     var s = mod.createStore();
     utils.dassert(s === mod.PrimaryStore._primaryStore);
-    return s;
+    return <shared.store.PrimaryStore> s;
   }
-  
+
+  /*
   export function create(test) {
     var m = newPrimary();
     var n = mod.createStore();
@@ -24,7 +31,7 @@ module testcommit {
     test.done();
   };
 
-  export function primaryEmptyCommit(test) {
+  export function emptyCommit(test) {
     var s = newPrimary();
     var db = s.store();
     test.ok(utils.isObject(db));
@@ -32,115 +39,180 @@ module testcommit {
     test.done();
   };
 
-  export function primaryAssign(test) {
+  export function simpleAssign(test) {
     var s = newPrimary();
+
     var db = s.store();
     test.ok(utils.isObject(db));
     db.a = 1;
     test.ok(s.commit());
     test.ok(db._tracker._rev === 1);
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = 2;
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 2);
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = 'foo';
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 3);
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = false;
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 4);
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = null;
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 5);
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = undefined;
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 6);
+
     test.done();
   };
 
+  export function objectAssign(test) {
+    var s = newPrimary();
 
-  /*
-
-  exports.init = function (test) {
-    var m: shared.main.Store = new mod.Store();
-    var n: shared.main.Store = new mod.Store();
-    test.ok(m !== n);
-    test.ok(m.isPrimaryStore());
-    test.ok(!n.isPrimaryStore());
-    test.ok(mod.primaryStore() === m);
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = {};
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 1);
+    test.ok(utils.isEqual(db, { a: {} }));
     test.done();
   };
 
-  exports.startup = function (test) {
-    var m = primary();
-    var s = new mod.Store();
-    while (s.pending()) { }
-    test.ok(s.root()._tracker._id === m.root()._tracker._id);
+  export function arrayAssign(test) {
+    var s = newPrimary();
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = [];
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 1);
+    test.ok(utils.isEqual(db, { a: [] }));
     test.done();
-  }
+  };
 
-  exports.startup2 = function (test) {
-    var m = primary();
-    var s1 = new mod.Store();
-    while (s1.pending()) { }
-    test.ok(s1.root()._tracker._id === m.root()._tracker._id);
-    var s2 = new mod.Store();
-    while (s2.pending()) { }
-    test.ok(s2.root()._tracker._id === m.root()._tracker._id);
+  export function nestedObjectAssign(test) {
+    var s = newPrimary();
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = { b: {} };
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 1);
+    test.ok(utils.isEqual(db, { a: { b: {} } }));
     test.done();
-  }
+  };
 
-  exports.startup3 = function (test) {
-    var m = primary();
-    var s1 = new mod.Store();
-    var s2 = new mod.Store();
-    while (s1.pending()) { }
-    test.ok(s1.root()._tracker._id === m.root()._tracker._id);
-    while (s2.pending()) { }
-    test.ok(s2.root()._tracker._id === m.root()._tracker._id);
+  export function nestedArrayAssign(test) {
+    var s = newPrimary();
+
+    var db = s.store();
+    test.ok(utils.isObject(db));
+    db.a = [ [0] ];
+    test.ok(s.commit());
+    test.ok(db._tracker._rev === 1);
+    test.ok(utils.isEqual(db, { a: [[0]] }));
     test.done();
+  };
+
+  export function secondaryAssign(test) {
+    var p = newPrimary();
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a = 1;
+    }, function (err) {
+      test.ok(err === null);
+      test.done();
+    });
   }
 
-  exports.getroot = function (test) {
-    var m = primary();
-    var s = new mod.Store();
+  export function secondaryAssignBadRev(test) {
+    var p = newPrimary();
+    p.store()._tracker._rev = 1;
 
-    test.expect(2);
-    s.save(
-      function (root: any) {
-        test.ok(root === s.root());
-      },
-      function (sucesss: bool) {
-        test.ok(sucesss);
-        test.done();
-      }
-    );
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a = 1;
+    }, function (err) {
+      test.ok(err === null);
+      test.done();
+    });
   }
 
-  exports.getroot2 = function (test) {
-    var m = primary();
-    var s = new mod.Store();
+  export function secondaryAssignOverwrite(test) {
+    var p = newPrimary();
+    p.store().a = 1;
+    p.store().b = 2;
+    p.store()._tracker._rev = 1;
 
-    test.expect(4);
-    s.save(
-      function (root: any) {
-        test.ok(root === s.root());
-      },
-      function (sucesss: bool) {
-        test.ok(sucesss);
-      }
-    );
-
-    s.save(
-      function (root: any) {
-        test.ok(root === s.root());
-      },
-      function (sucesss: bool) {
-        test.ok(sucesss);
-        test.done();
-      }
-    );
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a = 3;
+    }, function (err) {
+      test.ok(err === null);
+      test.ok(p.store().a == 3);
+      test.ok(p.store().b == 2);
+      test.done();
+    });
   }
 
-  exports.writeprop = function (test) {
-    var m = primary();
-    var s = new mod.Store();
+  export function secondaryNested(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = { b: 0 };
+    });
 
-    test.expect(2);
-    s.save(
-      function (root: any) {
-        test.ok(root === s.root());
-        root.a = 1;
-      },
-      function (sucesss: bool) {
-        test.ok(sucesss);
-        test.done();
-      }
-    );
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      console.log('ATOMIC');
+      test.ok(utils.isObject(db));
+      db.a.b += 1;
+      console.log('DONE');
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(p.store().a.b == 1);
+      test.done();
+    });
   }
-  */
+*/
+
+  export function secondaryNestedDouble(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = { count: 0 };
+      db.b = { count: 0 };
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      console.log('ATOMIC');
+      test.ok(utils.isObject(db));
+      db.a.count += 1;
+      db.b.count += 1;
+      console.log('DONE');
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(p.store().a.count == 1);
+      test.ok(p.store().b.count == 1);
+      test.done();
+    });
+  }
+
 }

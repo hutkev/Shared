@@ -10,17 +10,31 @@
 /// <reference path='types.ts' />
 /// <reference path='router.ts' />
 /// <reference path='tracker.ts' />
-/// <reference path='shared.ts' />
+/// <reference path='primary.ts' />
+/// <reference path='secondary.ts' />
 
-exports.createStore = shared.main.createStore;
+var ver = '0.1.0';
 
-//shared.utils.defaultLogger().enableDebugLogging('ROUTER');
-//shared.utils.defaultLogger().enableDebugLogging('STORE');
-shared.utils.enableAsserts(true);
+exports.version = function () {
+  return ver;
+}
+
+exports.info = function () {
+  return 'hut78-shared ' + ver + ' Copyright(c) Kevin Jones';
+}
+
+
+exports.createStore = shared.store.createStore;
+
+exports.debug = {};
+exports.debug.log = function (args) {
+  shared.utils.defaultLogger().enableDebugLogging(args);
+}
+exports.debug.assert = shared.utils.enableAsserts
 
 exports.tests = {};
 exports.tests.utils = shared.utils;
 exports.tests.types = shared.types;
 exports.tests.router = shared.router;
 exports.tests.tracker = shared.tracker;
-exports.tests.main = shared.main;
+exports.tests.store = shared.store;
