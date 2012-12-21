@@ -179,11 +179,7 @@ module shared {
         }
 
         // Form Mtx 
-        var rec = [rset, nset, cset];
-        if (rec[2].length === 0) {
-          utils.defaultLogger().fatal('Empty cset!');
-        }
-        return rec;
+        return [rset, nset, cset];
       }
 
       /*
@@ -208,7 +204,6 @@ module shared {
       }
 
       undoMtx(store: utils.Map, needCollect?: bool = true): void {
-        //console.log('************ UNDO **************');
         this.disable++;
 
         // We must collect over readset to build complete picture
@@ -221,9 +216,15 @@ module shared {
           var e = this._cset.at(i);
           var t = tracker.getTracker(e.obj);
 
-          if (e.write && e.last!==undefined) {
-            //console.log('UNDOING');
-            e.obj[e.write] = e.last;
+          if (e.write !== undefined) {
+            if (e.last !== undefined) {
+              e.obj[e.write] = e.last;
+            } else {
+              delete e.obj[e.write];
+            }
+          } else if (e.del != undefined) {
+            t.kill();
+            store.remove(t.id());
           }
 
           i--;

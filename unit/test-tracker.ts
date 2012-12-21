@@ -90,7 +90,7 @@ module testtracker {
     test.ok(typeof obj.a == 'number');
     test.ok(obj.a === 1);
     obj.a = 2;
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '2', lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '2', last: 1, lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.ok(obj.a === 2);
@@ -104,7 +104,7 @@ module testtracker {
     test.ok(typeof obj.a == 'string');
     test.ok(obj.a === 'b');
     obj.a = 'c';
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '"c"', lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '"c"', last: 'b', lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.ok(obj.a === 'c');
@@ -118,7 +118,7 @@ module testtracker {
     test.ok(typeof obj.a == 'boolean');
     test.ok(obj.a === true);
     obj.a = false;
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 'false', lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 'false', last: true, lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.ok(obj.a === false);
@@ -132,7 +132,7 @@ module testtracker {
     var t = new tracker.Tracker(store,obj);
     test.ok(typeof obj.a == 'function');
     obj.a = function (a) { };
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 'null', lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 'null', last: f, lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.done();
@@ -151,7 +151,7 @@ module testtracker {
     obj.a = { b: 1 };
     test.ok(store.readsetSize() === 1);
     var v = '<' + store.valueId(obj.a) + '>';
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: v, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: v, last: {}, lasttx: -1 }));
     var id = store.valueId(obj.a).toString();
     test.ok(utils.isEqual(store.newsetObject(id), { b: 1 }));
     test.ok(store.newsetSize() === 1);
@@ -172,7 +172,7 @@ module testtracker {
     obj.a = [1];
     var id = store.valueId(obj.a).toString();
     var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: v, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: v, last: [], lasttx: -1 }));
     test.ok(utils.isEqual(store.newsetObject(id), [1]));
     test.ok(store.newsetSize() === 1);
     test.ok(utils.isEqual(obj.a, [1]));
@@ -189,28 +189,28 @@ module testtracker {
     obj.a = '';
     test.ok(obj.a === '');
     test.ok(store.readsetSize() === 0);
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '""', lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '""', last: 1, lasttx: -1 }));
     obj.a = true;
     test.ok(obj.a === true);
     test.ok(store.readsetSize() === 0);
-    test.ok(utils.isEqual(store.cset()[1], { obj: obj, write: 'a', value: 'true', lasttx: 0 }));
+    test.ok(utils.isEqual(store.cset()[1], { obj: obj, write: 'a', value: 'true', last: '', lasttx: 0 }));
     var f = function () { };
     obj.a = f;
     test.ok(obj.a === f);
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
-    test.ok(utils.isEqual(store.cset()[2], { obj: obj, write: 'a', value: 'null', lasttx: 1 }));
+    test.ok(utils.isEqual(store.cset()[2], { obj: obj, write: 'a', value: 'null', last: true, lasttx: 1 }));
     obj.a = {};
     var id = store.valueId(obj.a).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset()[3], { obj: obj, write: 'a', value: v, lasttx: 2 }));
+    var v1 = '<' + id + '>';
+    test.ok(utils.isEqual(store.cset()[3], { obj: obj, write: 'a', value: v1, last: f, lasttx: 2 }));
     test.ok(store.readsetSize() === 0);
     test.ok(utils.isEqual(store.newsetObject(id), {}));
     test.ok(store.newsetSize() === 1);
     obj.a = [];
     var id = store.valueId(obj.a).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset()[4], { obj: obj, write: 'a', value: v, lasttx: 3 }));
+    var v2 = '<' + id + '>';
+    test.ok(utils.isEqual(store.cset()[4], { obj: obj, write: 'a', value: v2, last: {}, lasttx: 3 }));
     test.ok(store.readsetSize() === 0);
     test.ok(utils.isEqual(store.newsetObject(id), []));
     test.ok(store.newsetSize() === 2);
@@ -597,12 +597,12 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj[0] = 2; obj[1] = false; obj[2] = 'a'; obj[3] = undefined; obj[4] = null;
     store.collectObject(obj);
-    var writeset = [
-     { obj: obj, write: '0', value: '2', lasttx: -1 },
-     { obj: obj, write: '1', value: 'false', lasttx: 0 },
-     { obj: obj, write: '2', value: '"a"', lasttx: 1 },
-     { obj: obj, write: '3', value: 'undefined', lasttx: 2 },
-     { obj: obj, write: '4', value: 'null', lasttx: 3 }];
+    var writeset : any[] = [
+     { obj: obj, write: '0', value: '2', last: 1, lasttx: -1 },
+     { obj: obj, write: '1', value: 'false', last: true, lasttx: 0 },
+     { obj: obj, write: '2', value: '"a"', last: '', lasttx: 1 },
+     { obj: obj, write: '3', value: 'undefined', last: null, lasttx: 2 },
+     { obj: obj, write: '4', value: 'null', last: undefined, lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset));
     test.ok(store.newsetSize() === 0);
     test.ok(store.readsetSize() === 0);
@@ -616,7 +616,7 @@ module testtracker {
     var id = store.valueId(obj[0]).toString();
     var v = '<' + id + '>';
     var writeset = [
-     { obj: obj, write: '0', value: v, lasttx: -1 }];
+     { obj: obj, write: '0', value: v, last: null, lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset));
     test.ok(utils.isEqual(store.newsetObject(id), {}));
     test.ok(store.newsetSize() === 1);
@@ -631,7 +631,7 @@ module testtracker {
     var id = store.valueId(obj[0]).toString();
     var v = '<' + id + '>';
     var writeset = [
-     { obj: obj, write: '0', value: v, lasttx: -1 }];
+     { obj: obj, write: '0', value: v, last: null, lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset));
     test.ok(utils.isEqual(store.newsetObject(id), []));
     test.ok(store.newsetSize() === 1);

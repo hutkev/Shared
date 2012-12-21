@@ -20,14 +20,12 @@ module shared {
       private _router: router.Router = null;  // Message router
       private _logger: utils.Logger;          // Default logger
       private _pending: any[] = [];           // Outstanding work queue
-      private _root: any;                     // Root object
       private _ostore: utils.Map = null;      // Object lookup
 
       constructor () {
         super();
         this._logger = utils.defaultLogger();
         this._ostore = new utils.Map(utils.hash);
-        this._root = null;
         this._router = null;
         this.start();
         this._pending.unshift({ action: 'get', id: rootUID });
@@ -105,44 +103,6 @@ module shared {
             break;
           case 'save':
             this.tryAtomic();
-            /*
-            if (r.fn !== null) {
-              try {
-                utils.dassert(utils.isObject(this._root));
-                this.markRead(this._root);
-                r.arg = r.fn(this._root);
-                r.action = 'waitsave';
-                // Push to master (there is always something to do)
-                this.sendPrimaryStore({
-                  detail: 'mtx', mtx: this.mtx(this._ostore)});
-              } catch (e) {
-                // Cache miss when trying to commit
-                if (e instanceof tracker.UnknownReference) {
-                  this.undoMtx(); // Force a reset
-                  var unk: tracker.UnknownReference = e;
-                  var missing = this._ostore.find(unk.missing());
-
-                  if (missing === null) {
-                    // Request to the missing object
-                    this._pending.unshift({
-                      action: 'get', id: unk.missing(),
-                      assignid: unk.id(), assignprop: unk.prop()
-                    });
-                    this.nextStep();
-                  } else {
-                    // Commit available to the prop
-                    var to = this._ostore.find(unk.id());
-                    this.disable++;
-                    to.obj[unk.prop()] = missing.obj;
-                    this.disable--;
-                    this.nextStep();
-                  }
-                } else {
-                  // Something else went wrong
-                  throw e;
-                }
-              }
-            }*/
             break;
          case 'waitsave': 
            // Nothing to be done until reply
@@ -176,8 +136,6 @@ module shared {
               t.setRev(msg.body.rev);
               t.retrack(obj);
             }
-            if (t.id() == rootUID) 
-              this._root = obj;
 
             var e = this._pending[0];
             if (e.assignid !== undefined) {
@@ -222,22 +180,30 @@ module shared {
         var r = this._pending[0];
         utils.dassert(r.action === 'save' || r.action === 'waitsave');
         try {
-          utils.dassert(utils.isObject(this._root));
-          this.markRead(this._root);
-          r.arg = r.fn(this._root);
-          r.action = 'waitsave';
+          // Get root
+          var e = this._ostore.find(rootUID);
+          if (e == null) {
+            this._pending.unshift({ action: 'get', id: rootUID });
+            this.nextStep();
+            return;
+          }
+
+          // Invoke atomic block
+          var root = e.obj;
+          this.markRead(root);
+          r.arg = r.fn(root);
+
           // Push to master (there is always something to do)
+          r.action = 'waitsave';
           this.sendPrimaryStore({
             detail: 'mtx', mtx: this.mtx(this._ostore)
           });
         } catch (e) {
+          this.undoMtx(this._ostore); // Force a reset
+
           // Cache miss when trying to commit
           if (e instanceof tracker.UnknownReference) {
-            this.undoMtx(this._ostore); // Force a reset
             var unk: tracker.UnknownReference = e;
-
-            //console.log('UNKOWN: %s %s %s', unk.id(), unk.prop(), unk.missing());
-
             var missing = this._ostore.find(unk.missing());
             if (missing === null) {
               // Request to the missing object
@@ -256,7 +222,12 @@ module shared {
             }
           } else {
             // Something else went wrong
-            throw e;
+            var cb = this._pending[0].cb;
+            var arg = this._pending[0].arg;
+            this._pending.shift();
+            this.resetMtx();
+            if (utils.isValue(cb))
+              cb(e,arg);
           }
         }
       }

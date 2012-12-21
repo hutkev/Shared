@@ -135,6 +135,7 @@ module shared {
       public _lastTx: number;
 
       constructor(tc: TrackCache, obj: any, id: utils.uid = utils.UID(), rev?: number) {
+        utils.dassert(utils.isObject(tc));
         utils.dassert(utils.isUID(id));
 
         // Error check
@@ -166,12 +167,29 @@ module shared {
         }
       }
 
+      /*
+       * When trackers die they lose connection to the cache. Normally
+       * they die when changes to the object can not be undone and so 
+       * the object needs to be refreshed from the master cache.
+       */
+      kill() {
+        this._tc = null;
+      }
+
+      /*
+       * Has this tracker/object combo died
+       */
+      isDead(): bool {
+        return this._tc === null;
+      }
+
       /**
        * Get the tracker cache this tracker is using
        */
       tc() : TrackCache {
         return this._tc;
       };
+
 
       /**
        * Get the unique object id
@@ -492,8 +510,14 @@ module shared {
                 var ref: serial.Reference = value;
                 throw new UnknownReference(tracker.id(), prop, ref.id());
               }
-              if (isTracked(value))
-                tracker.tc().markRead(value);
+              var t = getTrackerUnsafe(value);
+              if (t!==null) {
+                if (t.isDead()) {
+                  throw new UnknownReference(tracker.id(), prop, t.id());
+                } else {
+                  tracker.tc().markRead(value);
+                }
+              }
             }
           }
           return value;

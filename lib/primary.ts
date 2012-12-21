@@ -100,6 +100,13 @@ module shared {
         return true;
       }
 
+      /*
+       * This is only public for debugging purposes.
+       */
+      undo() {
+        this.undoMtx(this._ostore, true);
+      }
+
       private address(): message.Address {
         return new message.Address(this.id());
       }
@@ -255,6 +262,7 @@ module shared {
       }
 
       private gc(id: utils.uid) {
+        // TODO: ??
         console.log('GC: %j', id);
       }
 

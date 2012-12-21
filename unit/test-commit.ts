@@ -13,14 +13,13 @@ module testcommit {
     if (mod.PrimaryStore._primaryStore != null)
       mod.PrimaryStore._primaryStore.stop();
     mod.PrimaryStore._primaryStore = null;
-    utils.defaultLogger().enableDebugLogging('STORE');
+    //utils.defaultLogger().enableDebugLogging('STORE');
     //utils.defaultLogger().enableDebugLogging('ROUTER');
     var s = mod.createStore();
     utils.dassert(s === mod.PrimaryStore._primaryStore);
     return <shared.store.PrimaryStore> s;
   }
 
-  /*
   export function create(test) {
     var m = newPrimary();
     var n = mod.createStore();
@@ -129,6 +128,23 @@ module testcommit {
     test.done();
   };
 
+  export function secondaryEmpty(test) {
+    var p = newPrimary();
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      // Empty
+    }, function (err) {
+      test.ok(err == null);
+      s.atomic(function (db) {
+        // Empty
+      }, function (err) {
+        test.ok(err == null);
+        test.done();
+      });
+    });
+  }
+
   export function secondaryAssign(test) {
     var p = newPrimary();
     var s = new shared.store.SecondaryStore();
@@ -181,17 +197,14 @@ module testcommit {
 
     var s = new shared.store.SecondaryStore();
     s.atomic(function (db) {
-      console.log('ATOMIC');
       test.ok(utils.isObject(db));
       db.a.b += 1;
-      console.log('DONE');
     }, function (err) {
       test.ok(err == null);
       test.ok(p.store().a.b == 1);
       test.done();
     });
   }
-*/
 
   export function secondaryNestedDouble(test) {
     var p = newPrimary();
@@ -202,11 +215,9 @@ module testcommit {
 
     var s = new shared.store.SecondaryStore();
     s.atomic(function (db) {
-      console.log('ATOMIC');
       test.ok(utils.isObject(db));
       db.a.count += 1;
       db.b.count += 1;
-      console.log('DONE');
     }, function (err) {
       test.ok(err == null);
       test.ok(p.store().a.count == 1);
