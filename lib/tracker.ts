@@ -56,8 +56,8 @@ module shared {
       addDelete(obj: any, prop: string, lasttx: number): number;
       addReverse(obj: any, lasttx: number): number;
       addSort(obj: any, lasttx: number): number;
-      addShift(obj: any, lasttx: number): number;
-      addUnshift(obj: any, size:number, lasttx: number): number;
+      addShift(obj: any, at:number, size:number, lasttx: number): number;
+      addUnshift(obj: any, at:number, size:number, lasttx: number): number;
     }
 
     /*
@@ -230,6 +230,14 @@ module shared {
         return (this._lastTx != -1);
       }
 
+      lastChange(): number {
+        return this._lastTx;
+      }
+
+      setLastChange(tx: number): void {
+        this._lastTx = tx;
+      }
+
       /**
        * Change notification handlers called to record changes
        */
@@ -258,14 +266,14 @@ module shared {
         this._lastTx = this.tc().addSort(obj, this._lastTx);
       }
 
-      addShift(obj: any) {
+      addShift(obj: any, at: number, size: number) {
         utils.dassert(getTracker(obj) === this);
-        this._lastTx = this.tc().addShift(obj, this._lastTx);
+        this._lastTx = this.tc().addShift(obj, at, size, this._lastTx);
       }
 
-      addUnshift(obj: any, size: number) {
+      addUnshift(obj: any, at:number, size: number) {
         utils.dassert(getTracker(obj) === this);
-        this._lastTx = this.tc().addUnshift(obj, size, this._lastTx);
+        this._lastTx = this.tc().addUnshift(obj, at, size, this._lastTx);
       }
 
       /*
@@ -284,7 +292,7 @@ module shared {
       /**
        * Wrap a property for get/set tracking
        */
-      track(obj, prop) : void {
+      track(obj: any, prop: string) : void {
         utils.dassert(getTracker(obj) === this);
         if (obj.hasOwnProperty(prop)) {
           var value = obj[prop];
@@ -335,34 +343,38 @@ module shared {
         configurable: false,
         value: function () {
           var t = getTracker(arr);
-          t.tc().disable++;
+          if (t.tc().disable === 0) {
+            t.tc().disable++;
 
-          // Shift will 'untrack' our props so we have to record what
-          // is currently being tracked and reapply this after the shift
-          // Sad I know, but just how it works.
-          var k = Object.keys(arr);
-          var tracked = [];
-          k.forEach(function (e, i, a) {
-            tracked.push(isPropTracked(arr, a[i]));
-          });
+            // Shift will 'untrack' our props so we have to record what
+            // is currently being tracked and reapply this after the shift
+            // Sad I know, but just how it works.
+            var k = Object.keys(arr);
+            var tracked = [];
+            k.forEach(function (e, i, a) {
+              tracked.push(isPropTracked(arr, a[i]));
+            });
 
-          // Record & perform the shift
-          if (arr.length > 0) {
-            t.addShift(arr);
+            // Record & perform the shift
+            if (arr.length > 0) {
+              t.addShift(arr,0,1);
+            }
+            var r = Array.prototype.shift.apply(arr, arguments);
+
+            // Restore tracking
+            var k = Object.keys(arr);
+            for (var i = 0; i < arr.length; i++) {
+              var key = k[i];
+              if (tracked[i + 1] && !isPropTracked(arr, key))
+                t.track(arr, key);
+            }
+
+            t.tc().disable--;
+            return r;
+          } else {
+            return Array.prototype.shift.apply(arr, arguments);
           }
-          var r = Array.prototype.shift.apply(arr, arguments);
-
-          // Restore tracking
-          var k = Object.keys(arr);
-          for (var i = 0; i < arr.length; i++) {
-            var key = k[i];
-            if (tracked[i + 1] && !isPropTracked(arr, key))
-              t.track(arr, key);
-          }
-
-          t.tc().disable--;
-          return r;
-        }
+        } 
       });
 
       Object.defineProperty(arr, 'unshift', {
@@ -370,38 +382,42 @@ module shared {
         configurable: false,
         value: function () {
           var t = getTracker(arr);
-          t.tc().disable++;
+          if (t.tc().disable === 0) {
+            t.tc().disable++;
 
-          // Cache which props are tracked
-          var k = Object.keys(arr);
-          var tracked = [];
-          k.forEach(function (e, i, a) {
-            tracked.push(isPropTracked(arr, a[i]));
-          });
+            // Cache which props are tracked
+            var k = Object.keys(arr);
+            var tracked = [];
+            k.forEach(function (e, i, a) {
+              tracked.push(isPropTracked(arr, a[i]));
+            });
 
-          // Record the unshift
-          if (arguments.length > 0) {
-            t.addUnshift(arr, arguments.length);
+            // Record the unshift
+            if (arguments.length > 0) {
+              t.addUnshift(arr, 0, arguments.length);
+            }
+            var r = Array.prototype.unshift.apply(arr, arguments);
+
+            // Record writes of new data
+            for (var i = 0; i < arguments.length; i++) {
+              t.track(arr, i + '');
+              var v = serial.writeValue(t.tc(), arr[i], '');
+              t.addNew(arr, i + '', v);
+            }
+
+            // Restore our tracking
+            var k = Object.keys(arr);
+            for (; i < arr.length; i++) {
+              var key = k[i];
+              if (tracked[i - arguments.length] && !isPropTracked(arr, key))
+                t.track(arr, key);
+            }
+
+            t.tc().disable--;
+            return r;
+          } else {
+            return Array.prototype.unshift.apply(arr, arguments);
           }
-          var r = Array.prototype.unshift.apply(arr, arguments);
-
-          // Record writes of new data
-          for (var i = 0; i < arguments.length; i++) {
-            t.track(arr, i + '');
-            var v = serial.writeValue(t.tc(), arr[i], '');
-            t.addNew(arr, i+'', v);
-          }
-
-          // Restore our tracking
-          var k = Object.keys(arr);
-          for (; i < arr.length; i++) {
-            var key = k[i];
-            if (tracked[i - arguments.length] && !isPropTracked(arr, key))
-              t.track(arr, key);
-          }
-
-          t.tc().disable--;
-          return r;
         }
       });
 
@@ -410,36 +426,40 @@ module shared {
         configurable: false,
         value: function () {
           var t = getTracker(arr);
-          t.tc().disable++;
+          if (t.tc().disable === 0) {
+            t.tc().disable++;
 
-          // Reverse keeps the tracking but does not reverse it leading
-          // to lots of confusion, another hack required
-          var k = Object.keys(arr);
-          var tracked = [];
-          k.forEach(function (e, i, a) {
-            tracked.push(isPropTracked(arr, a[i]));
-          });
-          tracked.reverse();
+            // Reverse keeps the tracking but does not reverse it leading
+            // to lots of confusion, another hack required
+            var k = Object.keys(arr);
+            var tracked = [];
+            k.forEach(function (e, i, a) {
+              tracked.push(isPropTracked(arr, a[i]));
+            });
+            tracked.reverse();
 
-          // Record & perform the reverse
-          t.addReverse(arr);
-          var r = Array.prototype.reverse.apply(arr, arguments);
+            // Record & perform the reverse
+            t.addReverse(arr);
+            var r = Array.prototype.reverse.apply(arr, arguments);
 
-          // Recover tracking state
-          var k = Object.keys(arr);
-          for (var i = 0; i < arr.length; i++) {
-            var key = k[i];
-            var trckd = isPropTracked(arr, key);
-            if (tracked[i] && !trckd) {
-              t.track(arr, key);
-            } else if (!tracked[i] && trckd) {
-              unTrack(arr, key);
+            // Recover tracking state
+            var k = Object.keys(r);
+            for (var i = 0; i < k.length; i++) {
+              var key = k[i];
+              var trckd = isPropTracked(arr, key);
+              if (tracked[i] && !trckd) {
+                t.track(arr, key);
+              } else if (!tracked[i] && trckd) {
+                unTrack(arr, key);
+              }
             }
-          }
 
-          t.tc().disable--;
-          return r;
-        }
+            t.tc().disable--;
+            return r;
+          } else {
+            return Array.prototype.reverse.apply(arr, arguments);
+          }
+        } 
       });
 
       Object.defineProperty(arr, 'sort', {
@@ -447,52 +467,118 @@ module shared {
         configurable: false,
         value: function () {
           var t = getTracker(arr);
-          t.tc().disable++;
+          if (t.tc().disable === 0) {
+            t.tc().disable++;
 
-          // Now we are in trouble, sort is like reverse, it leaves tracking
-          // at the pre-sort positions and we need to correct this by sorting
-          // over a wrapper array and then storing the results.
-          var k = Object.keys(arr);
-          var pairs = [];
-          k.forEach(function (e, i, a) {
-            pairs.push({ elem: arr[a[i]], track: isPropTracked(arr, a[i]) });
-          });
+            // Now we are in trouble, sort is like reverse, it leaves tracking
+            // at the pre-sort positions and we need to correct this by sorting
+            // over a wrapper array and then storing the results.
+            var k = Object.keys(arr);
+            var pairs = [];
+            k.forEach(function (e, i, a) {
+              pairs.push({ elem: arr[a[i]], track: isPropTracked(arr, a[i]) });
+            });
 
-          // Run the sort
-          var sortfn = arguments[0];
-          if (sortfn === undefined)
-            sortfn = lexSort;
+            // Run the sort
+            var sortfn = arguments[0];
+            if (sortfn === undefined)
+              sortfn = lexSort;
 
-          var wrapFn = function (a, b) {
-            var r = sortfn(a.elem, b.elem);
-            return r;
-          };
-          Array.prototype.sort.apply(pairs, [wrapFn]);
+            var wrapFn = function (a, b) {
+              var r = sortfn(a.elem, b.elem);
+              return r;
+            };
+            Array.prototype.sort.apply(pairs, [wrapFn]);
 
-          // Apply results
-          for (var i = 0; i < pairs.length; i++) {
-            var key = k[i];
-            arr[key] = pairs[i].elem;
-            var trckd = isPropTracked(arr, key);
-            if (pairs[i].track && !trckd) {
-              t.track(arr, key);
-            } else if (!pairs[i].track && trckd) {
-              unTrack(arr, key);
+            // Apply results
+            for (var i = 0; i < pairs.length; i++) {
+              var key = k[i];
+              arr[key] = pairs[i].elem;
+              var trckd = isPropTracked(arr, key);
+              if (pairs[i].track && !trckd) {
+                t.track(arr, key);
+              } else if (!pairs[i].track && trckd) {
+                unTrack(arr, key);
+              }
             }
-          }
 
-          // Best record it after all that
-          t.addSort(arr);
-          t.tc().disable--;
-          return arr;
+            // Best record it after all that
+            t.addSort(arr);
+            t.tc().disable--;
+            return arr;
+          } else {
+            Array.prototype.sort.apply(pairs, [wrapFn]);
+          }
         }
       });
 
       Object.defineProperty(arr, 'splice', {
+
         enumerable: false,
         configurable: false,
         value: function () {
-          throw new Error('splice: TODO');
+          var t = getTracker(arr);
+          if (t.tc().disable === 0) {
+            t.tc().disable++;
+
+            // ES5 15.4.4.12 + Moz extension (What a mess!)
+            var len = arr.length;
+            var relStart = utils.toInteger(arguments[0]);
+            var actStart;
+            if (relStart < 0) 
+              actStart = Math.max((len + relStart), 0);
+            else
+              actStart = Math.min(relStart, len);
+            var actDelCount = len - actStart;
+            if (arguments[1] !== undefined)
+              actDelCount = Math.min(Math.max(utils.toInteger(arguments[1]), 0), len - actStart);
+            var insCount = Math.max(arguments.length-2,0);
+
+            // Splice leaves tracking where it was and does not adjust so we have to 
+            // correct manually as usual but remebering about sparse arrays
+            var k = Object.keys(arr);
+            var tracked = [];
+            k.forEach(function (e, i, a) {
+              tracked.push(isPropTracked(arr, a[i]));
+            });
+
+            var r = Array.prototype.splice.apply(arr, arguments);
+
+            // Now recover correct tracking state & record changes
+            //var k = Object.keys(r);
+            for (var i = 0; i < k.length; i++) {
+              var key = +k[i];
+              if (key < actStart || key >= actStart + actDelCount) {
+                if (key >= actStart) {
+                  key += (insCount - actDelCount);
+                }
+                var skey = key + '';
+
+                var trckd = isPropTracked(arr, skey);
+                if (tracked[i] && !trckd) {
+                  t.track(arr, skey);
+                } else if (!tracked[i] && trckd) {
+                  unTrack(arr, skey);
+                }
+              } 
+            }
+
+            // Anything inserted should not be tracked
+            for (var i = actStart; i < actStart + insCount; i++) {
+              if (arr[i] !== undefined)
+                unTrack(arr, i + '');
+            }
+
+            if (actDelCount>0)
+              t.addShift(arr, actStart, actDelCount);
+            if (insCount>0)
+              t.addUnshift(arr, actStart, insCount);
+
+            t.tc().disable--;
+            return r;
+          } else {
+            return Array.prototype.splice.apply(arr, arguments);
+          }
         }
       });
     }
@@ -540,7 +626,7 @@ module shared {
       return (desc.get != undefined && desc.set != undefined);
     }
 
-    function unTrack(obj, prop) {
+    function unTrack(obj: any, prop: string) {
       var desc = Object.getOwnPropertyDescriptor(obj, prop);
       if (desc.get != undefined && desc.set != undefined) {
         var v = obj[prop];

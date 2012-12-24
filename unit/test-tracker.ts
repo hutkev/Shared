@@ -15,7 +15,7 @@ module testtracker {
     store = new shared.store.PrimaryStore();
     utils.defaultLogger().disableDebugLogging();
   }
-
+  
   export function illegaltype(test) {
     reset();
     test.throws(function () { new tracker.Tracker(store,null); }, Error);
@@ -323,15 +323,14 @@ module testtracker {
     var obj = [1, 2];
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.shift();
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, shift: true, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, shift: 0, size: 1, lasttx: -1 }));
     obj.unshift(3);
-    test.ok(utils.isEqual(store.cset()[1], { obj: obj, unshift: true, size: 1, lasttx: 0 }));
+    test.ok(utils.isEqual(store.cset()[1], { obj: obj, unshift: 0, size: 1, lasttx: 0 }));
     test.ok(utils.isEqual(store.cset()[2], { obj: obj, write: '0', value: '3', lasttx: 1 }));
     obj.unshift(4, 5);
-    test.ok(utils.isEqual(store.cset()[3], { obj: obj, unshift: true, size: 2, lasttx: 2 }));
+    test.ok(utils.isEqual(store.cset()[3], { obj: obj, unshift: 0, size: 2, lasttx: 2 }));
     test.ok(utils.isEqual(store.cset()[4], { obj: obj, write: '0', value: '4', lasttx: 3 }));
     test.ok(utils.isEqual(store.cset()[5], { obj: obj, write: '1', value: '5', lasttx: 4 }));
-
     test.ok(obj, [4, 5, 3, 1]);
     test.done();
   };
@@ -639,7 +638,7 @@ module testtracker {
 
     test.done();
   };
-
+  
   export function writesetArray2(test) {
     reset();
     var obj = [1, 2, 3];
@@ -649,9 +648,9 @@ module testtracker {
     obj.unshift(5, 4);
     store.collectObject(obj);
     var writeset: any[] = [
-     { obj: obj, shift: true, lasttx: -1 },
-     { obj: obj, shift: true, lasttx: 0 },
-     { obj: obj, unshift: true, size: 2, lasttx: 1 },
+     { obj: obj, shift: 0, size: 1, lasttx: -1 },
+     { obj: obj, shift: 0, size: 1, lasttx: 0 },
+     { obj: obj, unshift: 0, size: 2, lasttx: 1 },
      { obj: obj, write: '0', value: '5', lasttx: 2 },
      { obj: obj, write: '1', value: '4', lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset));
@@ -677,8 +676,8 @@ module testtracker {
     obj.unshift(0);
     store.collectObject(obj);
     var writeset2: any[] = [
-     { obj: obj, shift: true, lasttx: -1 },
-     { obj: obj, unshift: true, size: 1, lasttx: 0 },
+     { obj: obj, shift: 0, size: 1, lasttx: -1 },
+     { obj: obj, unshift: 0, size: 1, lasttx: 0 },
      { obj: obj, write: '0', value: '0', lasttx: 1 },
      { obj: obj, write: '2', value: '4', lasttx: 2 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
@@ -692,12 +691,12 @@ module testtracker {
     obj.push(4);
     store.collectObject(obj);
     var writeset3: any[] = [
-     { obj: obj, shift: true, lasttx: -1 },
-     { obj: obj, unshift: true, size: 1, lasttx: 0 },
+     { obj: obj, shift: 0, size: 1, lasttx: -1 },
+     { obj: obj, unshift: 0, size: 1, lasttx: 0 },
      { obj: obj, write: '0', value: '0', lasttx: 1 },
      { obj: obj, write: '2', value: '4', lasttx: 2 }];
     test.ok(utils.isEqual(store.cset(), writeset3));
-
+  
     reset();
     var obj = [1, 2, 3];
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
@@ -708,13 +707,13 @@ module testtracker {
     obj.push(4);
     store.collectObject(obj);
     var writeset4: any[] = [
-     { obj: obj, shift: true, lasttx: -1 },
-     { obj: obj, unshift: true, size: 1, lasttx: 0 },
+     { obj: obj, shift: 0, size: 1, lasttx: -1 },
+     { obj: obj, unshift: 0, size: 1, lasttx: 0 },
      { obj: obj, write: '0', value: '0', lasttx: 1 },
-     { obj: obj, write: '1', value: '4', lasttx: 2 },
-     { obj: obj, del: '2', lasttx: 3 }];
+     { obj: obj, shift: 2, size: 1, lasttx: 2 },
+     { obj: obj, write: '1', value: '4', lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset4));
-
+  
     reset();
     var obj = [1, 2, 3];
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
@@ -725,9 +724,9 @@ module testtracker {
     obj.push(4);
     store.collectObject(obj);
     var writeset5: any[] = [
-     { obj: obj, shift: true, lasttx: -1 },
-     { obj: obj, shift: true, lasttx: 0 },
-     { obj: obj, unshift: true, size: 1, lasttx: 1 },
+     { obj: obj, shift: 0, size: 1, lasttx: -1 },
+     { obj: obj, shift: 0, size: 1, lasttx: 0 },
+     { obj: obj, unshift: 0, size: 1, lasttx: 1 },
      { obj: obj, write: '0', value: '0', lasttx: 2 },
      { obj: obj, write: '1', value: '4', lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset5));
@@ -742,11 +741,9 @@ module testtracker {
     obj.unshift(4);
     store.collectObject(obj);
     var writeset6: any[] = [
-     { obj: obj, unshift: true, size: 1, lasttx: -1 },
+     { obj: obj, unshift: 0, size: 1, lasttx: -1 },
      { obj: obj, write: '0', value: '4', lasttx: 0 },
-     { obj: obj, del: '1', lasttx: 1 },
-     { obj: obj, del: '2', lasttx: 2 },
-     { obj: obj, del: '3', lasttx: 3 }];
+     { obj: obj, shift: 1, size: 3, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset6));
 
     reset();
@@ -758,9 +755,9 @@ module testtracker {
     obj.push(4);
     store.collectObject(obj);
     var writeset7: any[] = [
-     { obj: obj, shift: true, lasttx: -1 },
-     { obj: obj, shift: true, lasttx: 0 },
-     { obj: obj, shift: true, lasttx: 1 },
+     { obj: obj, shift: 0, size: 1, lasttx: -1 },
+     { obj: obj, shift: 0, size: 1, lasttx: 0 },
+     { obj: obj, shift: 0, size: 1, lasttx: 1 },
      { obj: obj, write: '0', value: '4', lasttx: 2 }];
     test.ok(utils.isEqual(store.cset(), writeset7));
 
@@ -894,7 +891,7 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.sort();
     store.collectObject(obj);
-    var writeset = [
+    var writeset = [null,
      { obj: obj, reinit: '["0":1,"1":2,"2":3,"3":4]', lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset));
     test.ok(utils.isEqual(obj, [1, 2, 3, 4]));
@@ -905,7 +902,7 @@ module testtracker {
     obj.reverse();
     obj.sort();
     store.collectObject(obj);
-    var writeset = [null,
+    var writeset = [null,null,
      { obj: obj, reinit: '["0":1,"1":2,"2":3,"3":4]', lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset));
     test.ok(utils.isEqual(obj, [1, 2, 3, 4]));
@@ -916,7 +913,7 @@ module testtracker {
     obj[1] = 2;
     obj.sort();
     store.collectObject(obj);
-    var writeset = [null,
+    var writeset = [null,null,
      { obj: obj, reinit: '["0":1,"1":2,"2":3,"3":4]', lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset));
     test.ok(utils.isEqual(obj, [1, 2, 3, 4]));
@@ -929,10 +926,8 @@ module testtracker {
     obj[1] = 2;
     obj.reverse();
     store.collectObject(obj);
-    var writeset2: any[] = [
-     { obj: obj, reinit: '["0":4,"1":3,"2":2,"3":1]', lasttx: -1 },
-     { obj: obj, reverse: true, lasttx: 0 },
-     { obj: obj, write: '2', value: '2', lasttx: 1 }];
+    var writeset2: any[] = [null,null,
+     { obj: obj, reinit: '["0":4,"1":3,"2":2,"3":1]', lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
 
     test.done();
@@ -945,6 +940,428 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(s2,obj) === 'object');
 
     test.throws(function () { store.valueId(obj) });
+
+    test.done();
+  }
+
+  export function spliceDel(test) {
+    
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(1,2);
+    store.collectObject(obj);
+    var writeset = [
+     { obj: obj, shift: 1, size:2, lasttx: -1 }];
+    test.ok(utils.isEqual(store.cset(), writeset));
+    test.ok(utils.isEqual(obj, [4,1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(2);
+    store.collectObject(obj);
+    var writeset = [
+     { obj: obj, shift: 2, size:2, lasttx: -1 }];
+    test.ok(utils.isEqual(store.cset(), writeset));
+    test.ok(utils.isEqual(obj, [4,2]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(2,0);
+    store.collectObject(obj);
+    test.ok(utils.isEqual(store.cset(), []));
+    test.ok(utils.isEqual(obj, [4,2,3,1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(-2,1);
+    store.collectObject(obj);
+    var writeset = [
+     { obj: obj, shift: 2, size:1, lasttx: -1 }];
+    test.ok(utils.isEqual(store.cset(), writeset));
+    test.ok(utils.isEqual(obj, [4,2,1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(1,2);
+    obj.push(5);
+    store.collectObject(obj);
+    var writeset2 : any[] = [
+     { obj: obj, shift: 1, size:2, lasttx: -1 },
+     { obj: obj, write: '2', value:'5', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset2));
+    test.ok(utils.isEqual(obj, [4,1,5]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(1,2);
+    obj.pop();
+    store.collectObject(obj);
+    var writeset3 : any[] = [
+     { obj: obj, shift: 1, size:2, lasttx: -1 },
+     { obj: obj, shift: 1, size:1, lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset3));
+    test.ok(utils.isEqual(obj, [4]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(1,2);
+    obj.shift();
+    store.collectObject(obj);
+    var writeset4 : any[] = [
+     { obj: obj, shift: 1, size:2, lasttx: -1 },
+     { obj: obj, shift: 0, size:1, lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset4));
+    test.ok(utils.isEqual(obj, [1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(1,2);
+    obj.unshift(5);
+    store.collectObject(obj);
+    var writeset5 : any[] = [
+     { obj: obj, shift: 1, size:2, lasttx: -1 },
+     { obj: obj, unshift: 0, size:1, lasttx: 0 },
+     { obj: obj, write: '0', value:'5', lasttx: 1 }];
+    test.ok(utils.isEqual(store.cset(), writeset5));
+    test.ok(utils.isEqual(obj, [5,4,1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(1,2);
+    delete obj[0];
+    store.collectObject(obj);
+    var writeset6 : any[] = [
+     { obj: obj, shift: 1, size:2, lasttx: -1 },
+     { obj: obj, del: '0', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset6));
+    test.ok(utils.isEqual(obj, [,1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store,obj) === 'object');
+    obj.splice(1,2);
+    obj[0]=5;
+    store.collectObject(obj);
+    var writeset7 : any[] = [
+     { obj: obj, shift: 1, size:2, lasttx: -1 },
+     { obj: obj, write: '0', value: '5', last: 4, lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset7));
+    test.ok(utils.isEqual(obj, [5,1]));
+    
+    test.done();
+  };
+
+  export function spliceIns(test) {
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(1, 0);
+    store.collectObject(obj);
+    var writeset = [];
+    test.ok(utils.isEqual(store.cset(), writeset));
+    test.ok(utils.isEqual(obj, [4, 2, 3, 1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(1, 0, 5);
+    store.collectObject(obj);
+    var writeset1 : any[] = [
+     { obj: obj, unshift: 1, size:1, lasttx: -1 },
+     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset1));
+    test.ok(utils.isEqual(obj, [4, 5, 2, 3, 1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(1, 0, 5, 6);
+    store.collectObject(obj);
+    var writeset2 : any[] = [
+     { obj: obj, unshift: 1, size: 2, lasttx: -1 },
+     { obj: obj, write: '1', value: '5', lasttx: 0 },
+     { obj: obj, write: '2', value: '6', lasttx: 1 }];
+    test.ok(utils.isEqual(store.cset(), writeset2));
+    test.ok(utils.isEqual(obj, [4, 5, 6, 2, 3, 1]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(4, 0, 5, 6);
+    store.collectObject(obj);
+    var writeset3 : any[] = [
+     { obj: obj, unshift: 4, size: 2, lasttx: -1 },
+     { obj: obj, write: '4', value: '5', lasttx: 0 },
+     { obj: obj, write: '5', value: '6', lasttx: 1 }];
+    test.ok(utils.isEqual(store.cset(), writeset3));
+    test.ok(utils.isEqual(obj, [4, 2, 3, 1, 5, 6]));
+
+    reset();
+    var obj: any = [4, 2, 3, 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(0, 0, 5, 6);
+    store.collectObject(obj);
+    var writeset4 : any[] = [
+     { obj: obj, unshift: 0, size: 2, lasttx: -1 },
+     { obj: obj, write: '0', value: '5', lasttx: 0 },
+     { obj: obj, write: '1', value: '6', lasttx: 1 }];
+    test.ok(utils.isEqual(store.cset(), writeset4));
+    test.ok(utils.isEqual(obj, [5, 6, 4, 2, 3, 1]));
+
+    test.done();
+  }
+
+  export function sparseArray(test) {
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj[2] = 5;
+    store.collectObject(obj);
+    var writeset1 : any[] = [
+     { obj: obj, write: '2', value: '5', lasttx: -1 }];
+    test.ok(utils.isEqual(store.cset(), writeset1));
+    test.ok(utils.isEqual(obj, [4, , 5, 1]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj[1] = 5;
+    delete obj[3];
+    store.collectObject(obj);
+    var writeset2 : any[] = [
+     { obj: obj, del: '3', lasttx: -1 },
+     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset2));
+    test.ok(utils.isEqual(obj, [4, 5, undefined ,undefined ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj[1] = 5;
+    obj.push(6);
+    store.collectObject(obj);
+    var writeset3 : any[] = [
+     { obj: obj, write: '1', value: '5', lasttx: -1 },
+     { obj: obj, write: '4', value: '6', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset3));
+    test.ok(utils.isEqual(obj, [4, 5, undefined , 1, 6 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.pop();
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset4 : any[] = [
+     { obj: obj, shift: 3, size: 1, lasttx: -1 },
+     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset4));
+    test.ok(utils.isEqual(obj, [4, 5, undefined ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.shift();
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset5 : any[] = [
+     { obj: obj, shift: 0, size: 1, lasttx: -1 },
+     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset5));
+    test.ok(utils.isEqual(obj, [undefined, 5, 1 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.unshift(6);
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset6 : any[] = [
+     { obj: obj, unshift: 0, size: 1, lasttx: -1 },
+     { obj: obj, write: '0', value: '6', lasttx: 0 },
+     { obj: obj, write: '1', value: '5', last: 4, lasttx: 1 }];
+    test.ok(utils.isEqual(store.cset(), writeset6));
+    test.ok(utils.isEqual(obj, [6, 5, undefined, undefined, 1 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.unshift(6,7);
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset7 : any[] = [
+     { obj: obj, unshift: 0, size: 2, lasttx: -1 },
+     { obj: obj, write: '0', value: '6', lasttx: 0 },
+     { obj: obj, write: '1', value: '7', lasttx: 1 },
+     { obj: obj, write: '1', value: '5', last: 7, lasttx: 2 }];
+    test.ok(utils.isEqual(store.cset(), writeset7));
+    test.ok(utils.isEqual(obj, [6, 5, 4, undefined, undefined, 1 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.reverse();
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset7a : any[] = [
+     { obj: obj, reverse: true, lasttx: -1 },
+     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset7a));
+    test.ok(utils.isEqual(obj, [1, 5, undefined, 4 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.sort();
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset8: any[] = [null,
+     { obj: obj, reinit: '["0":1,"1":5,"3":4]', lasttx: -1 }];
+    test.ok(utils.isEqual(store.cset(), writeset8));
+    test.ok(utils.isEqual(obj, [1, 5, undefined, 4 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(1,2);
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset9: any[] = [
+      { obj: obj, shift: 1, size: 2, lasttx: -1 },
+      { obj: obj, write: '1', value: '5', last: 1, lasttx: 0 }];
+    test.ok(utils.isEqual(store.cset(), writeset9));
+    test.ok(utils.isEqual(obj, [4, 5 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(1,2,6);
+    obj[1] = 5;
+    store.collectObject(obj);
+    var writeset9a: any[] = [
+      { obj: obj, shift: 1, size: 2, lasttx: -1 },
+      { obj: obj, unshift: 1, size: 1, lasttx: 0 },
+      { obj: obj, write: '1', value: '5', lasttx: 1 }];
+    test.ok(utils.isEqual(store.cset(), writeset9a));
+    test.ok(utils.isEqual(obj, [4, 5, 1 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.splice(1,1,6);
+    obj.unshift(7);
+    store.collectObject(obj);
+    var writeset10: any[] = [
+      { obj: obj, shift: 1, size: 1, lasttx: -1 },
+      { obj: obj, unshift: 1, size: 1, lasttx: 0 },
+      { obj: obj, unshift: 0, size: 1, lasttx: 1 },
+      { obj: obj, write: '0', value: '7', lasttx: 2 },
+      { obj: obj, write: '2', value: '6', lasttx: 3 }];
+    test.ok(utils.isEqual(store.cset(), writeset10));
+    test.ok(utils.isEqual(obj, [7, 4, 6, undefined, 1 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.unshift(6);
+    obj.splice(1,1,7);
+    obj.shift();
+    store.collectObject(obj);
+    var writeset11: any[] = [
+      { obj: obj, unshift: 0, size: 1, lasttx: -1 },
+      { obj: obj, write: '0', value: '6', lasttx: 0 },
+      { obj: obj, shift: 1, size: 1, lasttx: 1 },
+      { obj: obj, unshift: 1, size: 1, lasttx: 2 },
+      { obj: obj, shift: 0, size: 1, lasttx: 3 },
+      { obj: obj, write: '0', value: '7', lasttx: 4 }];
+    test.ok(utils.isEqual(store.cset(), writeset11));
+    test.ok(utils.isEqual(obj, [7, undefined, undefined, 1 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.shift();
+    obj.splice(1,1,7);
+    obj.unshift(6);
+    store.collectObject(obj);
+    var writeset12: any[] = [
+      { obj: obj, shift: 0, size: 1, lasttx: -1 },
+      { obj: obj, shift: 1, size: 1, lasttx: 0 },
+      { obj: obj, unshift: 1, size: 1, lasttx: 1 },
+      { obj: obj, unshift: 0, size: 1, lasttx: 2 },
+      { obj: obj, write: '0', value: '6', lasttx: 3 },
+      { obj: obj, write: '2', value: '7', lasttx: 4 }];
+    test.ok(utils.isEqual(store.cset(), writeset12));
+    test.ok(utils.isEqual(obj, [6, undefined, 7, 1 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    delete obj[3];
+    obj.splice(1,1,7);
+    obj.unshift(6);
+    store.collectObject(obj);
+    var writeset14: any[] = [
+      { obj: obj, shift: 1, size: 1, lasttx: -1 },
+      { obj: obj, unshift: 1, size: 1, lasttx: 0 },
+      { obj: obj, unshift: 0, size: 1, lasttx: 1 },
+      { obj: obj, write: '0', value: '6', lasttx: 2 },
+      { obj: obj, write: '2', value: '7', lasttx: 3 },
+      { obj: obj, del: '4', lasttx: 4 }];
+    test.ok(utils.isEqual(store.cset(), writeset14));
+    test.ok(utils.isEqual(obj, [6, 4 , 7, undefined, undefined ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    delete obj[3];
+    obj.splice(1,1,7);
+    obj.reverse();
+    obj.unshift(6);
+    store.collectObject(obj);
+    var writeset15: any[] = [
+      { obj: obj, shift: 1, size: 1, lasttx: -1 },
+      { obj: obj, unshift: 1, size: 1, lasttx: 0 },
+      { obj: obj, reverse: true, lasttx: 1 },
+      { obj: obj, unshift: 0, size: 1, lasttx: 2 },
+      { obj: obj, write: '0', value: '6', lasttx: 3 },
+      { obj: obj, del: '1', lasttx: 4 },
+      { obj: obj, del: '2', lasttx: 5 },
+      { obj: obj, write: '3', value: '7', lasttx: 6 }];
+    test.ok(utils.isEqual(store.cset(), writeset15));
+    test.ok(utils.isEqual(obj, [6, undefined, undefined, 7, 4 ]));
+
+    reset();
+    var obj: any = [4, , , 1];
+    test.ok(typeof new tracker.Tracker(store, obj) === 'object');
+    obj.push(8);
+    delete obj[3];
+    obj.splice(1,1,7);
+    obj.reverse();
+    obj.pop();
+    obj.unshift(6);
+    store.collectObject(obj);
+    var writeset16: any[] = [
+      { obj: obj, shift: 1, size: 1, lasttx: -1 },
+      { obj: obj, unshift: 1, size: 1, lasttx: 0 },
+      { obj: obj, reverse: true, lasttx: 1 },
+      { obj: obj, unshift: 0, size: 1, lasttx: 2 },
+      { obj: obj, write: '0', value: '6', lasttx: 3 },
+      { obj: obj, write: '1', value: '8', lasttx: 4 },
+      { obj: obj, del: '2', lasttx: 5 },
+      { obj: obj, write: '4', value: '7', lasttx: 6 }];
+    test.ok(utils.isEqual(store.cset(), writeset16));
+    test.ok(utils.isEqual(obj, [6, 8, undefined, undefined, 7 ]));
 
     test.done();
   }

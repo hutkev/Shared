@@ -96,20 +96,30 @@ module shared {
       return s;
     }
 
+    export function cloneArray(obj: any[]): any[] {
+      dassert(isArray(obj));
+      return obj.slice(0);
+    }
 
+    export function cloneObject(obj: any): any {
+      dassert(isObject(obj));
+      var temp = {};
+      for(var key in obj)
+        temp[key] = obj[key];
+      return temp;
+    }
 
-    // String
-    // Boolean
-    // Number
-    // Date
-    // RegExp
-    // Error
-    // EvalError
-    // RangeError
-
-
-    export function flatClone(obj: any): any {
-      return JSON.parse(JSON.stringify(obj));
+    // ES5 9.2 
+    export function toInteger(val: any) {
+      var v = +val;   // toNumber conversion
+      if (v === NaN)
+        return 0;
+      if (v === 0 || v === Infinity || v == -Infinity)
+        return v;
+      if (v < 0)
+        return -1 * Math.floor(-v);
+      else
+        return Math.floor(v);
     }
 
   } // module utils

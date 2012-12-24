@@ -109,13 +109,13 @@ module shared {
         return this._cset.size() - 1;
       }
 
-      addShift(obj: any, lasttx: number): number {
-        this._cset.push({ obj: obj, shift: true, lasttx: lasttx });
+      addShift(obj: any, at: number, size: number, lasttx: number): number {
+        this._cset.push({ obj: obj, shift: at, size: size, lasttx: lasttx });
         return this._cset.size() - 1;
       }
 
-      addUnshift(obj: any, size: number, lasttx: number): number {
-        this._cset.push({ obj: obj, unshift: true, size: size, lasttx: lasttx });
+      addUnshift(obj: any, at: number, size: number, lasttx: number): number {
+        this._cset.push({ obj: obj, unshift: at, size: size, lasttx: lasttx });
         return this._cset.size() - 1;
       }
 
@@ -125,16 +125,18 @@ module shared {
       replaceSort(at: number, obj: any, values: string) {
         utils.dassert(this._cset.at(at).sort !== undefined);
 
-        // Null out previous history
-        var dead = this._cset.at(at).lasttx;
+        // Null out history
+        var t = tracker.getTracker(obj);
+        var dead = t.lastChange();
         while (dead !== -1) {
           var c = dead;
           dead = this._cset.at(dead).lasttx;
           this._cset.setAt(c, null);
         }
 
-        // Replace the sort
-        this._cset.setAt(at, { obj: obj, reinit: values, lasttx: -1 });
+        // Insert re-init
+        this._cset.push({ obj: obj, reinit: values, lasttx: -1 });
+        t.setLastChange(this._cset.size() - 1);
       }
 
       /*
@@ -169,7 +171,7 @@ module shared {
         for (var i = 0; i < this.cset().length; i++) {
           var e = this.cset()[i]
           if (e !== null) {
-            var x = utils.flatClone(e);
+            var x = utils.cloneObject(e);
             x.id = tracker.getTracker(e.obj).id();
             delete x.obj;
             delete x.last;
@@ -214,19 +216,27 @@ module shared {
         var i = this._cset.size() - 1;
         while (i >= 0) {
           var e = this._cset.at(i);
-          var t = tracker.getTracker(e.obj);
+          if (e !== null) {
+            var t = tracker.getTracker(e.obj);
+            if (!t.isDead()) {
 
-          if (e.write !== undefined) {
-            if (e.last !== undefined) {
-              e.obj[e.write] = e.last;
-            } else {
-              delete e.obj[e.write];
+              // Try reverse if can
+              if (e.write !== undefined) {
+                if (e.last !== undefined) {
+                  e.obj[e.write] = e.last;
+                } else {
+                  if (utils.isArray(e.obj))
+                    e.obj.splice(parseInt(e.write), 1);
+                  else
+                    delete e.obj[e.write];
+                }
+              } else {
+                // Conservatively kill everything else
+                t.kill();
+                store.remove(t.id());
+              }
             }
-          } else if (e.del != undefined) {
-            t.kill();
-            store.remove(t.id());
           }
-
           i--;
         }
 
@@ -234,8 +244,10 @@ module shared {
         var i = this._cset.size() - 1;
         while (i >= 0) {
           var e = this._cset.at(i);
-          var t = tracker.getTracker(e.obj);
-          t.downrev(e.obj);
+          if (e !== null) {
+            var t = tracker.getTracker(e.obj);
+            t.downrev(e.obj);
+          }
           i--;
         }
 
@@ -324,7 +336,7 @@ module shared {
         t.tc().disable++;
 
         // Loop old props to find any to delete
-        var oldProps = utils.flatClone(t.type().props());
+        var oldProps = utils.cloneArray(t.type().props());
         var newProps = Object.keys(obj);
         for (var i = 0; i < oldProps.length; i++) {
           if (!obj.hasOwnProperty(oldProps[i]) || !tracker.isPropTracked(obj, oldProps[i])) {
@@ -366,10 +378,12 @@ module shared {
         var writeset = [];
         while (at !== -1) {
           if (this._cset.at(at).sort !== undefined) {
-            // Replace sort be a re-init
+            // Replace sort by a re-init
             var v = serial.writeObject(t.tc(), obj, '');
             this.replaceSort(at, obj, v);
-            break;  
+            t.uprev(obj);
+            t.tc().disable--;
+            return;  
           } else {
             writeset.unshift(this._cset.at(at));
           }
@@ -379,30 +393,77 @@ module shared {
         // Next we adjust the original props to account for how the array
         // has been shifted so we can detect new props and delete old ones
         // correctly.
-        var oldProps = utils.flatClone(t.type().props());
+        // REMEMBER the props maybe sparse but shift/unshift is abs
+        var oldProps = utils.cloneArray(t.type().props());
         for (var i = 0; i < writeset.length; i++) {
           if (writeset[i].shift != undefined) {
-            if (oldProps[0] == '0')
-              oldProps.shift();
-            for (var j = 0; j < oldProps.length; j++) {
-              var idx = parseInt(oldProps[j]);
-              if (idx > 0)
-                oldProps[j] = idx - 1 + '';
+            var at = writeset[i].shift;
+            var size = writeset[i].size;
+
+            var j = 0;
+            while (true) {
+              if (j === oldProps.length) break;
+              var idx = +oldProps[j];
+              if (idx >= at && idx < at + size) {
+                oldProps.splice(j, 1);
+              } else if (idx >= at + size) {
+                oldProps[j] = (idx - size)+'';
+                j++;
+              } else {
+                j++;
+              }
             }
+
           } else if (writeset[i].unshift != undefined) {
-            for (var j = 0; j < writeset[i].size; j++) {
-              oldProps.unshift((writeset[i].size - 1 - j) + '');
+            var at = writeset[i].unshift;
+            var size = writeset[i].size;
+
+            var j = 0;
+            var inserted = false;
+            while (true) {
+              if (j === oldProps.length) break;
+              var idx = +oldProps[j];
+              if (!inserted) {
+                if (idx >= at) {
+                  for (var k = size - 1 ; k >= 0; k--)
+                    oldProps.splice(j, 0, (at + k) + '')
+                  inserted = true;
+                  j += size;
+                } else {
+                  j ++;
+                }
+              } else {
+                oldProps[j] = (idx + size) + '';
+                j++;
+              }
+              
             }
-            for (var j = writeset[i].size; j < oldProps.length; j++) {
-              var idx = parseInt(oldProps[j]);
-              if (idx >= 0)
-                oldProps[j] = idx + writeset[i].size + '';
-            }
+
+            if (!inserted) {
+              for (var k = 0 ; k < size; k++)
+                oldProps.push((at+k)+'');
+            } 
           }
         }
 
-        // Delete any old props that don't exist anymore or write any that
-        // have been changed
+        // Pop oldProps that are bigger than current length
+        var pop = 0;
+        for (var i = oldProps.length-1; i >= 0; i--) {
+          if (+oldProps[i] >= obj.length) {
+            pop++;
+          } else {
+            break;
+          }
+        }
+        if (pop > 0) {
+          t.addShift(obj, obj.length, (+oldProps[oldProps.length - 1]) - obj.length +1);
+          while (pop > 0) {
+            oldProps.pop();
+            pop--;
+          }
+        }
+
+        // Write any old props that have been changed
         for (var i = 0; i < oldProps.length; i++) {
           if (!obj.hasOwnProperty(oldProps[i])) {
             t.addDelete(obj, oldProps[i]);
@@ -417,7 +478,7 @@ module shared {
         var newProps = Object.keys(obj);
         for (var i = 0; i < newProps.length; i++) {
           var idx = oldProps.indexOf(newProps[i]);
-          if (idx == -1) {
+          if (idx === -1) {
             var v = serial.writeValue(t.tc(), obj[newProps[i]], '');
             t.addNew(obj, newProps[i], v);
             t.track(obj, newProps[i]);

@@ -115,5 +115,188 @@ module testundo {
     });
   }
 
+  export function deleteNestedProp2(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [ 1 ];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      delete db.a[0];
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(db.a[0] === 1);
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function newArrayProps(test) {
+    var p = newPrimary();
+    var db = p.store();
+    db.a = [];
+    p.commit();
+    db.a[0] = 1;
+    p.undo();
+    test.ok(utils.isEqual(db, {a:[]}));
+    test.done();
+  };
+
+  export function changeArrayProps(test) {
+    var p = newPrimary();
+    var db = p.store();
+    db.a = [1];
+    p.commit();
+    db.a[0] = 2;
+    p.undo();
+    test.ok(utils.isEqual(db, {a:[1]}));
+    test.done();
+  };
+
+  export function deleteArrayProp(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      delete db.a[0];
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(db.a[0] === 1);
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+ 
+  export function arrayPush(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.push(1);
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function arrayPop(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.pop();
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[1]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function arrayShift(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.shift();
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[1]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function arrayUnShift(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.unshift(1);
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function arraySort(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.sort();
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[2,3,1]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function arrayReverse(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.reverse();
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[2,3,1]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+
 
 } // testundo
