@@ -12,10 +12,9 @@ module testundo {
       mod.PrimaryStore._primaryStore.stop();
     mod.PrimaryStore._primaryStore = null;
     //utils.defaultLogger().enableDebugLogging('STORE');
-    //utils.defaultLogger().enableDebugLogging('ROUTER');
-    var s = mod.createStore();
+    var s = new mod.PrimaryStore();
     utils.dassert(s === mod.PrimaryStore._primaryStore);
-    return <shared.store.PrimaryStore> s;
+    return s;
   }
 
   export function newProps(test) {
@@ -297,6 +296,64 @@ module testundo {
     });
   }
 
+  export function arraySplice1(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [2,3,1];
+    });
 
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.splice(1,1);
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[2,3,1]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function arraySplice2(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.splice(1,0,4);
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[2,3,1]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
+
+  export function arraySplice3(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      db.a.splice(0,3,4);
+      throw new Error('Silly');
+    }, function (err, arg) {
+      s.atomic(function (db) {
+        test.ok(utils.isEqual(db.a,[2,3,1]));
+      }, function (err, arg) {
+        test.ok(err === null);
+        test.done();
+      });
+    });
+  }
 
 } // testundo

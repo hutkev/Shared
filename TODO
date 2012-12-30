@@ -1,6 +1,7 @@
 
-Remove TODOs ;-)
+Object Protection get/set, proto etc
+Improve Router cluster worker search
+Stack check on router local send
+Incoming mtx validation
+Binary serialization
 GC semantics
-Array Undo Testing
-Array Updating
-Hide Primary

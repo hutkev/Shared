@@ -225,6 +225,7 @@ module shared {
             }
 
             // Deref if needed
+            /*
             if (rec.obj.hasOwnProperty(e.write)) {
               var t = tracker.getTrackerUnsafe(rec.obj[e.write]);
               if (t !== null) {
@@ -241,12 +242,13 @@ module shared {
             if (t !== null) {
               var rec = this._ostore.find(e.id);
               rec.refs += 1;
-            }
+            }*/
+
             rec.obj[e.write] = serial.readValue(e.value);
           }
 
           // Delete Prop
-          if (e.del !== undefined) {
+          else if (e.del !== undefined) {
             var rec = this._ostore.find(e.id);
             if (rec === null)
               this._logger.fatal('%s: cset contains unknown object', e.id);
@@ -254,7 +256,75 @@ module shared {
               wset.put(e.id);
               rec.obj._tracker._rev++;
             }
-            delete rec.obj[e.prop];
+            delete rec.obj[e.del];
+          }
+
+          // Re-init array
+          else if (e.reinit !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            rec.obj.length = 0;
+            serial.readObject(e.reinit, rec.obj);
+          } 
+
+          // Reverse array
+          else if (e.reverse !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            rec.obj.reverse();
+          } 
+
+          // Shift array
+          else if (e.shift !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            rec.obj.splice(e.shift,e.size);
+          } 
+
+          // Unshift array
+          else if (e.unshift !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            var args = [e.unshift,0];
+            for (var j = 0 ; j < e.size; j++)
+              args.push(undefined);
+            Array.prototype.splice.apply(rec.obj, args);
+          } 
+          
+          else {
+            this._logger.fatal('%s: cset contains unexpected command', e.id);
           }
         }
 
@@ -263,7 +333,6 @@ module shared {
 
       private gc(id: utils.uid) {
         // TODO: ??
-        console.log('GC: %j', id);
       }
 
       private resolveReferences(obj: any) {

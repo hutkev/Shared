@@ -13,13 +13,12 @@ module testcommit {
     if (mod.PrimaryStore._primaryStore != null)
       mod.PrimaryStore._primaryStore.stop();
     mod.PrimaryStore._primaryStore = null;
-    //utils.defaultLogger().enableDebugLogging('STORE');
-    //utils.defaultLogger().enableDebugLogging('ROUTER');
-    var s = mod.createStore();
+//  utils.defaultLogger().enableDebugLogging('STORE');
+    var s = new mod.PrimaryStore();
     utils.dassert(s === mod.PrimaryStore._primaryStore);
-    return <shared.store.PrimaryStore> s;
+    return s;
   }
-
+  
   export function create(test) {
     var m = newPrimary();
     var n = mod.createStore();
@@ -222,6 +221,227 @@ module testcommit {
       test.ok(err == null);
       test.ok(p.store().a.count == 1);
       test.ok(p.store().b.count == 1);
+      test.done();
+    });
+  }
+ 
+  export function secondaryDelProp(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = 1;
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      delete db.a;
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(p.store().a === undefined);
+      test.done();
+    });
+  }
+ 
+ export function secondaryDelNested(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = {};
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      delete db.a;
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(p.store().a === undefined);
+      test.done();
+    });
+  }
+
+ export function secondaryDelDNested(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = { b: {} };
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      delete db.a.b;
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,{}));
+      test.done();
+    });
+  }
+
+ export function secondaryArrayDel(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [1,2,3];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      delete db.a[1];
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[1,,3]));
+      test.done();
+    });
+  }
+
+  export function secondaryArraySort(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.sort();
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[1,2,3,4]));
+      test.done();
+    });
+  }
+
+  export function secondaryArrayReverse(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.reverse();
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[1,3,2,4]));
+      test.done();
+    });
+  }
+
+  export function secondaryArrayShift1(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.shift();
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[2,3,1]));
+      test.done();
+    });
+  }
+
+  export function secondaryArrayShift2(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.splice(1,2);
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[4,1]));
+      test.done();
+    });
+  }
+
+  export function secondaryArrayShift3(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.splice(3,2);
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[4,2,3]));
+      test.done();
+    });
+  }
+
+  export function secondaryArrayUnshift1(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.unshift(5);
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[5,4,2,3,1]));
+      test.done();
+    });
+  }
+
+  export function secondaryArrayUnshift2(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.unshift(5,6);
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[5,6,4,2,3,1]));
+      test.done();
+    });
+  }
+
+  export function secondaryArrayUnshift3(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.splice(1,0,5,6);
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[4,5,6,2,3,1]));
+      test.done();
+    });
+  }
+
+  export function secondaryArraySplice(test) {
+    var p = newPrimary();
+    p.atomic(function (db) {
+      db.a = [4,2,3,1];
+    });
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a.splice(1,2,7,8);
+    }, function (err) {
+      test.ok(err == null);
+      test.ok(utils.isEqual(p.store().a,[4,7,8,1]));
       test.done();
     });
   }
