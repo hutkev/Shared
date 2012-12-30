@@ -112,7 +112,7 @@ module shared {
     // ES5 9.2 
     export function toInteger(val: any) {
       var v = +val;   // toNumber conversion
-      if (v === NaN)
+      if (isNaN(v))
         return 0;
       if (v === 0 || v === Infinity || v == -Infinity)
         return v;
