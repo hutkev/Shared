@@ -224,27 +224,15 @@ module shared {
               rec.obj._tracker._rev++;
             }
 
-            // Deref if needed
-            /*
-            if (rec.obj.hasOwnProperty(e.write)) {
-              var t = tracker.getTrackerUnsafe(rec.obj[e.write]);
-              if (t !== null) {
-                var rec = this._ostore.find(e.id);
-                rec.refs -= 1;
-                if (rec.refs === 0)
-                  this.gc(e.id);
-              }
-            }
-
-            // Finally assign with possible upref
             var val = serial.readValue(e.value);
-            var t = tracker.getTrackerUnsafe(val);
-            if (t !== null) {
-              var rec = this._ostore.find(e.id);
-              rec.refs += 1;
-            }*/
-
-            rec.obj[e.write] = serial.readValue(e.value);
+            if (val instanceof serial.Reference) {
+              var trec = this._ostore.find(val.id());
+              if (!utils.isObjectOrArray(trec.obj))
+                this._logger.fatal('%s: cset contains unknown object ref', val.id);
+              rec.obj[e.write] = trec.obj;
+            } else {
+              rec.obj[e.write] = val;
+            }
           }
 
           // Delete Prop
