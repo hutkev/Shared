@@ -276,8 +276,8 @@ module testserial {
     test.ok(utils.isEqual(serial.readObject('{"a":3}', { a: 1, b:2 }), {a:3,b:2}));
     test.ok(utils.isEqual(serial.readObject('{"b":3}', { a: 1, b:2 }), {b:3}));
     test.ok(utils.isEqual(serial.readObject('{"c":3}', { a: 1, b:2 }), {c:3}));
-    test.ok(utils.isEqual(serial.readObject('[]', [1,2]), [1,2]));
-    test.ok(utils.isEqual(serial.readObject('["0":3]', [1,2]), [3,2]));
+    test.ok(utils.isEqual(serial.readObject('[]', [1,2]), []));
+    test.ok(utils.isEqual(serial.readObject('["0":3]', [1,2]), [3]));
     test.ok(utils.isEqual(serial.readObject('["1":3]', [1,2]), [,3]));
     test.ok(utils.isEqual(serial.readObject('["2":3]', [1,2]), [,,3]));
     test.done();

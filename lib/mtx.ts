@@ -204,8 +204,10 @@ module shared {
         // Reset Last change
         for (var i = 0 ; i < this._cset.size(); i++) {
           var e = this._cset.at(i);
-          var t = tracker.getTracker(e.obj);
-          t.setLastChange(-1);
+          if (e !== null) {
+            var t = tracker.getTracker(e.obj);
+            t.setLastChange(-1);
+          }
         }
 
         // Clear changes
