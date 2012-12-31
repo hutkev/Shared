@@ -4,7 +4,7 @@ var store = require('../lib/shared.js').createStore();
 if (cluster.isMaster) {
 
   var workers = parseInt(process.argv[2]) || 1;
-  var count = (parseInt(process.argv[3]) || 10000) / workers;
+  var count = ((parseInt(process.argv[3]) || 10000) / workers) >>> 0;
   console.log('Creating counter(s) of size %s for %s worker(s) to decrement', count, workers);
   store.atomic(function (db) { 
     for (var w =0 ; w<workers; w++) {
