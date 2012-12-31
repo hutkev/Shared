@@ -310,7 +310,6 @@ module shared {
       uprev(obj) {
         utils.dassert(getTracker(obj) === this);
         this._rev += 1;
-        this._lastTx = -1;
         this._type = types.TypeStore.instance().type(obj);
       }
 

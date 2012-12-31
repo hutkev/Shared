@@ -7,7 +7,7 @@ var transfers = ((parseInt(process.argv[4]) || 1000) / workers) >>> 0;
 
 if (cluster.isMaster) {
 
-//  require('../lib/shared.js').debug.log('STORE');
+  //require('../lib/shared.js').debug.log('STORE');
 
   console.log('Options: <workers> <accounts> <transfers>');
   console.log('Creating %s accounts with $1000 each', accounts);
@@ -35,6 +35,8 @@ if (cluster.isMaster) {
         for (var a = 0 ; a < accounts; a++) {
           sum += db['account' + a].balance;
         }
+        return sum;
+      }, function (err, sum) {
         if (sum === tcash) {
           console.log('Phew, there is still $%d in the accounts, all is well.', sum);
         } else {
@@ -46,7 +48,7 @@ if (cluster.isMaster) {
 
 } else {
 
-//  require('../lib/shared.js').debug.log('STORE');
+  //require('../lib/shared.js').debug.log('STORE');
 
   var todo = transfers;
 
@@ -56,12 +58,8 @@ if (cluster.isMaster) {
     var amount = (Math.random() * 100) >>> 0;
 
     store.atomic(function (db) {
-
-      //if (db['account' + from].balance > amount) {
-        db['account' + from].balance -= amount;
-        db['account' + to].balance += amount;
-      //}
-      
+      db['account' + from].balance -= amount;
+      db['account' + to].balance += amount;
     }, function (err) {
      if (err===null) {
        if (todo-- > 1) {

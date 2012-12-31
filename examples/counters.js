@@ -24,11 +24,13 @@ if (cluster.isMaster) {
     console.log('worker ' + worker.process.pid + ' died');
     running--;
     if (running === 0) {
-      store.atomic(function (db) {
-        for (var w = 0 ; w < workers; w++) {
-          console.log('Worker %s has counted down to %s', w, db['worker' + w].counter);
-        }
-      });
+      for (var w = 0 ; w < workers; w++) {
+        store.atomic(function (db) {
+          return db['worker' + w].counter;
+        }, function (err, count) {
+          console.log('Worker %s has counted down to %s', w, count);
+        });
+      }
     }
   });
 
@@ -37,20 +39,18 @@ if (cluster.isMaster) {
   var more = true;
   var worker = 'worker' + (cluster.worker.id - 1);
 
-  function loseOne() {
+  function decOne() {
     store.atomic(function (db) {
       db[worker].counter -= 1;
-      more = db[worker].counter > 0;
-    }, function (ok) {
-     if (ok) {
-       if (more) {
-         process.nextTick(loseOne);
-         return;
-       }
-     }
-     process.exit();
+      return db[worker].counter > 0;
+    }, function (err,more) {
+      if (!err && more) {
+        process.nextTick(decOne);
+      } else {
+        process.exit();
+      }
    });
   };
 
-  loseOne();
+  decOne();
 }

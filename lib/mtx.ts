@@ -200,6 +200,15 @@ module shared {
       }
 
       resetMtx(): void {
+
+        // Reset Last change
+        for (var i = 0 ; i < this._cset.size(); i++) {
+          var e = this._cset.at(i);
+          var t = tracker.getTracker(e.obj);
+          t.setLastChange(-1);
+        }
+
+        // Clear changes
         this._cset = new utils.Queue();;
         this._rset = new utils.Map(utils.hash);
         this._nset = new utils.Queue();
