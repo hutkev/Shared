@@ -7,7 +7,7 @@ var transfers = ((parseInt(process.argv[4]) || 1000) / workers) >>> 0;
 
 if (cluster.isMaster) {
 
-  //require('../lib/shared.js').debug.log('STORE');
+//  require('../lib/shared.js').debug.log('STORE');
 
   console.log('Options: <workers> <accounts> <transfers>');
   console.log('Creating %s accounts with $1000 each', accounts);

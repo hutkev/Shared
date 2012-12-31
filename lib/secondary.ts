@@ -14,6 +14,7 @@ module shared {
   export module store {
 
     var util = require('util');
+    var cluster = require('cluster');
 
     export class SecondaryStore implements Store extends mtx.mtxFactory {
 
@@ -160,9 +161,9 @@ module shared {
               var cb = this._pending[0].cb;
               var arg = this._pending[0].arg;
               this._pending.shift();
+              this.okMtx(this._ostore);
               if (utils.isValue(cb))
                 cb(null,arg);
-              this.resetMtx();
               this.nextStep();
             } else {
               this.undoMtx(this._ostore,false);
@@ -199,6 +200,7 @@ module shared {
             detail: 'mtx', mtx: this.mtx(this._ostore)
           });
         } catch (e) {
+
           this.undoMtx(this._ostore); // Force a reset
 
           // Cache miss when trying to commit
@@ -213,19 +215,19 @@ module shared {
               });
               this.nextStep();
             } else {
+
               // Commit available to the prop
               var to = this._ostore.find(unk.id());
               this.disable++;
               to.obj[unk.prop()] = missing.obj;
               this.disable--;
-              this.nextStep();
+              this.tryAtomic();
             }
           } else {
             // Something else went wrong
             var cb = this._pending[0].cb;
             var arg = this._pending[0].arg;
             this._pending.shift();
-            this.resetMtx();
             if (utils.isValue(cb))
               cb(e,arg);
           }
@@ -251,7 +253,8 @@ module shared {
               obj = serial.readObject(data, obj);
               var t = tracker.getTrackerUnsafe(obj);
               if (t === null) {
-                new tracker.Tracker(this, obj);
+                new tracker.Tracker(this, obj, id, rev);
+                this._ostore.insert(id, { ref: 1, obj: obj });
               } else {
                 t.retrack(obj);
               }

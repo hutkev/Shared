@@ -133,6 +133,8 @@ module shared {
           proto = [];
         } else {
           utils.dassert(utils.isArray(proto));
+          // Prop delete does not work well on arrays so zero proto
+          proto.length = 0;
         }
       }
 

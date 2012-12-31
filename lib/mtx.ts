@@ -205,6 +205,18 @@ module shared {
         this._nset = new utils.Queue();
       }
 
+      okMtx(store: utils.Map): void {
+        
+        // Start tracking the nset
+        var that = this;
+        this._nset.apply(function (value) {
+          new tracker.Tracker(that, value.obj, value.id, 0);
+          store.insert(value.id, { ref: 0, obj: value.obj });
+        });
+
+        this.resetMtx();
+      }
+
       undoMtx(store: utils.Map, needCollect?: bool = true): void {
         this.disable++;
 

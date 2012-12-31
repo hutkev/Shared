@@ -13,7 +13,7 @@ module testcommit {
     if (mod.PrimaryStore._primaryStore != null)
       mod.PrimaryStore._primaryStore.stop();
     mod.PrimaryStore._primaryStore = null;
-//  utils.defaultLogger().enableDebugLogging('STORE');
+    //utils.defaultLogger().enableDebugLogging('STORE');
     var s = new mod.PrimaryStore();
     utils.dassert(s === mod.PrimaryStore._primaryStore);
     return s;
@@ -443,6 +443,26 @@ module testcommit {
       test.ok(err == null);
       test.ok(utils.isEqual(p.store().a,[4,7,8,1]));
       test.done();
+    });
+  }
+
+  export function secondaryWrappedPush(test) {
+    var p = newPrimary();
+
+    var s = new shared.store.SecondaryStore();
+    s.atomic(function (db) {
+      test.ok(utils.isObject(db));
+      db.a = [];
+      db.a.push(1);
+    }, function (err) {
+      test.ok(err == null);
+      s.atomic(function (db) {
+        return db.a.length;
+      }, function (err, res) {
+        test.ok(err===null)
+        test.ok(res===1)
+        test.done();
+      });
     });
   }
 
