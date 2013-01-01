@@ -13,7 +13,7 @@
 /// <reference path='primary.ts' />
 /// <reference path='secondary.ts' />
 
-var ver = '0.1.0';
+var ver = '0.2.0';
 
 exports.version = function () {
   return ver;
