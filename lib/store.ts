@@ -3,30 +3,23 @@
 // license information.
 
 /// <reference path='import.ts' />
-/// <reference path='primary.ts' />
-/// <reference path='secondary.ts' />
+/// <reference path='utils.ts' />
+/// <reference path='mongo.ts' />
 
 module shared {
   export module store {
 
-    var cluster = require('cluster');
-    export var rootUID = utils.makeUID('00000000-0000-0000-0000-000000000001');
+    export var rootUID = utils.makeUID('000000000000000000000000');
 
     /*
      * Create a new store, this always has to be a secondary at the moment
      * to allow for undo actions.
      */
-    export function createStore(): Store {
-      if (cluster.isMaster && PrimaryStore.primaryStore() === null) {
-        new PrimaryStore();
-      }
-      return new SecondaryStore();
+    export function createStore(host: string, port:number, db: string, collection?: string): Store {
+      return new MongoStore(host, port, db, collection);
     }
 
-    export interface Store extends router.Receiver {
-
-      start(listen?: router.Router): void;
-      stop(): void;
+    export interface Store  {
 
       atomic(handler: (store: any) => any , callback?: (error: string, arg: any) => void ): void;
 

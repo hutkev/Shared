@@ -1,88 +1,89 @@
-///<reference path='node.d.ts' />
 
-declare module "mongodb" {
-	export class Server {
+declare module mongodb {
+
+	export interface Server {
 		constructor (host: string, port: number, opts?: ServerOptions);
 	}
-	export class Db {
+
+	export interface Db {
 		constructor (databaseName: string, serverConfig: Server, db_options?: DBOptions);
 
-		public db(dbName: string): Db;
+		db(dbName: string): Db;
 
-		public open(callback: (err : Error, db : Db) => void );
-		public close(forceClose?: bool, callback?: (err: any, result: any) => void );
-		public admin(callback: (err, result) => void ): any;
-		public collectionsInfo(collectionName: string, callback?: (err, result) => void );
-		public collectionNames(collectionName: string, options: any, callback?: (err, result) => void );
+		open(callback: (err : Error, db : Db) => void );
+		close(forceClose?: bool, callback?: (err: any, result: any) => void );
+		admin(callback: (err, result) => void ): any;
+		collectionsInfo(collectionName: string, callback?: (err, result) => void );
+		collectionNames(collectionName: string, options: any, callback?: (err, result) => void );
 
-		public collection(collectionName: string, callback: (err: any, collection: Collection) => void );
-		public collection(collectionName: string, options: MongoCollectionOptions, callback: (err: any, collection: Collection) => void );
+		collection(collectionName: string, callback: (err: any, collection: Collection) => void );
+		collection(collectionName: string, options: MongoCollectionOptions, callback: (err: any, collection: Collection) => void );
 
-		public collections(callback: (err: any, collections: Collection[]) => void );
-		public eval(code: any, parameters: any[], options?: any, callback?: (err, result) => void );
-		//public dereference(dbRef: DbRef, callback: (err, result) => void);
+		collections(callback: (err: any, collections: Collection[]) => void );
+		eval(code: any, parameters: any[], options?: any, callback?: (err, result) => void );
+		//dereference(dbRef: DbRef, callback: (err, result) => void);
 
-		public logout(options: any, callback?: (err, result) => void );
-		public logout(callback: (err, result) => void );
+		logout(options: any, callback?: (err, result) => void );
+		logout(callback: (err, result) => void );
 
-		public authenticate(userName: string, password: string, callback?: (err, result) => void );
-		public authenticate(userName: string, password: string, options: any, callback?: (err, result) => void );
+		authenticate(userName: string, password: string, callback?: (err, result) => void );
+		authenticate(userName: string, password: string, options: any, callback?: (err, result) => void );
 
-		public addUser(username: string, password: string, callback?: (err, result) => void );
-		public addUser(username: string, password: string, options: any, callback?: (err, result) => void );
+		addUser(username: string, password: string, callback?: (err, result) => void );
+		addUser(username: string, password: string, options: any, callback?: (err, result) => void );
 
-		public removeUser(username: string, callback?: (err, result) => void );
-		public removeUser(username: string, options: any, callback?: (err, result) => void );
+		removeUser(username: string, callback?: (err, result) => void );
+		removeUser(username: string, options: any, callback?: (err, result) => void );
 
-		public createCollection(collectionName: string, callback?: (err: Error, result: Collection) => void );
-		public createCollection(collectionName: string, options: CollectionCreateOptions, callback?: (err, result) => void );
+		createCollection(collectionName: string, callback?: (err: Error, result: Collection) => void );
+		createCollection(collectionName: string, options: CollectionCreateOptions, callback?: (err, result) => void );
 
-		public command(selector: any, callback?: (err, result) => void );
-		public command(selector: any, options: any, callback?: (err, result) => void );
+		command(selector: any, callback?: (err, result) => void );
+		command(selector: any, options: any, callback?: (err, result) => void );
 
-		public dropCollection(collectionName: string, callback?: (err, result) => void );
-		public renameCollection(fromCollection: string, toCollection: string, callback?: (err, result) => void );
+		dropCollection(collectionName: string, callback?: (err, result) => void );
+		renameCollection(fromCollection: string, toCollection: string, callback?: (err, result) => void );
 
-		public lastError(options, connectionOptions, callback: (err, result) => void );
-		public previousError(options, callback: (err, result) => void );
+		lastError(options, connectionOptions, callback: (err, result) => void );
+		previousError(options, callback: (err, result) => void );
 
 		// error = lastError
 		// lastStatus = lastError
 
-		public executeDbCommand(command_hash, callback?: (err, result) => void );
-		public executeDbCommand(command_hash, options, callback?: (err, result) => void );
+		executeDbCommand(command_hash, callback?: (err, result) => void );
+		executeDbCommand(command_hash, options, callback?: (err, result) => void );
 
-		public executeDbAdminCommand(command_hash, callback?: (err, result) => void );
-		public executeDbAdminCommand(command_hash, options, callback?: (err, result) => void );
+		executeDbAdminCommand(command_hash, callback?: (err, result) => void );
+		executeDbAdminCommand(command_hash, options, callback?: (err, result) => void );
 
-		public resetErrorHistory(callback?: (err, result) => void );
-		public resetErrorHistory(options, callback?: (err, result) => void );
+		resetErrorHistory(callback?: (err, result) => void );
+		resetErrorHistory(options, callback?: (err, result) => void );
 
-		public createIndex(collectionName, fieldOrSpec, options, callback);
-		public ensureIndex(collectionName, fieldOrSpec, options, callback);
+		createIndex(collectionName, fieldOrSpec, options, callback);
+		ensureIndex(collectionName, fieldOrSpec, options, callback);
 
-		public cursorInfo(options, callback);
+		cursorInfo(options, callback);
 
-		public dropIndex(collectionName, indexName, callback);
-		public reIndex(collectionName, callback);
-		public indexInformation(collectionName, options, callback);
-		public dropDatabase(callback: (err, result) => void );
+		dropIndex(collectionName, indexName, callback);
+		reIndex(collectionName, callback);
+		indexInformation(collectionName, options, callback);
+		dropDatabase(callback: (err, result) => void );
 
-		public stats(options, callback);
-		public _registerHandler(db_command, raw, connection, exhaust, callback);
-		public _reRegisterHandler(newId, object, callback);
-		public _callHandler(id, document, err);
-		public _hasHandler(id);
-		public _removeHandler(id);
-		public _findHandler(id): { id: string; callback: Function; };
-		public __executeQueryCommand(self, db_command, options, callback);
+		stats(options, callback);
+		_registerHandler(db_command, raw, connection, exhaust, callback);
+		_reRegisterHandler(newId, object, callback);
+		_callHandler(id, document, err);
+		_hasHandler(id);
+		_removeHandler(id);
+		_findHandler(id): { id: string; callback: Function; };
+		__executeQueryCommand(self, db_command, options, callback);
 
-		public DEFAULT_URL: string;
+		DEFAULT_URL: string;
 
-		public connect(url: string, options: { uri_decode_auth?: bool; }, callback: (err, result) => void );
+		connect(url: string, options: { uri_decode_auth?: bool; }, callback: (err, result) => void );
 	}
 
-	export class ObjectID {
+	export interface ObjectID {
 		constructor (s: string);
 	}
 
@@ -233,7 +234,7 @@ declare module "mongodb" {
 		v?: number;
 	}
 
-	export class Cursor {
+	export interface Cursor {
 		constructor (db, collection, selector, fields, skip, limit, sort, hint, explain, snapshot, timeout, tailable, batchSize, slaveOk, raw, read, returnKey, maxScan, min, max, showDiskLoc, comment, awaitdata, numberOfRetries, dbName, tailableRetryInterval, exhaust, partial);
 
 		rewind() : Cursor;
@@ -256,9 +257,6 @@ declare module "mongodb" {
 		close(callback?: (err, result) => void);
 		isClosed(): Boolean;
 
-		static INIT;
-		static OPEN;
-		static CLOSED;
 	}
 
 	export interface CollectionFindOptions {

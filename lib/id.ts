@@ -7,7 +7,7 @@
 module shared {
   export module utils {
 
-    var uuid = require('node-uuid');
+    var ObjectID = require('mongodb').ObjectID;
 
     /*
      * A network wide unique id wrapper. 
@@ -15,12 +15,12 @@ module shared {
      */
     export interface uid extends String { }
 
-    var uuidStr = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-' +
-      '[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
+    var uuidStr = '^[0-9a-fA-F]{24}$';
     var uuidPat = new RegExp(uuidStr);
 
     export function UID(): uid {
-      return new String(uuid.v1());
+      var o = new ObjectID();
+      return o.toHexString();
     }
 
     export function isUID(a: uid) {

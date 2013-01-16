@@ -27,7 +27,7 @@ module testserial {
   }
 
   function isReference(s: string) : bool {
-    return /<[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}>/.test(s);
+    return /<[0-9a-fA-F]{24}/.test(s);
   }
 
   var rh = new TestReferenceHandler();
@@ -251,9 +251,9 @@ module testserial {
     test.throws(function () { serial.readValue('xxx0') });
     test.ok(serial.readValue('0xxx') === 0);
     test.ok(serial.readValue('-120.3344e20xxx') === -120.3344e20);
-    test.throws(function() { serial.readValue('aaa<12345678-1234-1234-1234-123456789012>'); });
-    test.ok(utils.isEqual(serial.readValue('<12345678-1234-1234-1234-123456789012>aaa'), 
-      new serial.Reference('12345678-1234-1234-1234-123456789012')));
+    test.throws(function() { serial.readValue('aaa<123456781234567812345678>'); });
+    test.ok(utils.isEqual(serial.readValue('<123456781234567812345678>aaa'), 
+      new serial.Reference('123456781234567812345678')));
     test.done();
   };
 
@@ -295,7 +295,5 @@ module testserial {
     }
     test.done();
   }
-
-  
   
 } // testserial

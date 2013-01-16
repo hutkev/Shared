@@ -8,10 +8,7 @@
 /// <reference path='id.ts' />
 /// <reference path='collect.ts' />
 /// <reference path='types.ts' />
-/// <reference path='router.ts' />
 /// <reference path='tracker.ts' />
-/// <reference path='primary.ts' />
-/// <reference path='secondary.ts' />
 
 var ver = '0.2.0';
 
@@ -35,6 +32,5 @@ exports.debug.assert = shared.utils.enableAsserts
 exports.tests = {};
 exports.tests.utils = shared.utils;
 exports.tests.types = shared.types;
-exports.tests.router = shared.router;
 exports.tests.tracker = shared.tracker;
 exports.tests.store = shared.store;

@@ -277,10 +277,10 @@ module shared {
         }
 
         // Reference?
-        if (this._from.charAt(this._at) === '<' && this._from.charAt(this._at+37) === '>') {
-          var id = this._from.substr(this._at+1, 36);
+        if (this._from.charAt(this._at) === '<' && this._from.charAt(this._at+25) === '>') {
+          var id = this._from.substr(this._at+1, 24);
           if (utils.isUID(id)) {
-            this._at += 38;
+            this._at += 26;
             return new Reference(id);
           }
         } 

@@ -9,27 +9,59 @@
 /// <reference path='mtx.ts' />
 /// <reference path='store.ts' />
 
-//import mongodb = module('mongodb');
-
 module shared {
   export module store {
 
     var util = require('util');
-    var mongo = require('mongo');
+    var mongo = require('mongodb');
 
-    export class MongoStore implements Store {
+    export class MongoStore implements Store extends mtx.mtxFactory {
       private _db: string;
       private _collection: string;
       private _mongo: mongodb.Server;
 
+      private _logger: utils.Logger;          // Default logger
+      private _pending: any[] = [];           // Outstanding work queue
+      private _ostore: utils.Map = null;      // Object lookup
+
       constructor (host: string, port:number, db: string, collection?: string = 'shared') { 
+        super();
         this._db = db;
         this._collection = collection;
         this._mongo = new mongo.Server(host, port);
       }
 
       atomic(handler: (store: any) => any, callback?: (error: string, arg: any) => void ): void {
+        this._pending.push({ action: 'save', fn: handler, cb: callback});
+        this.nextStep();
       }
+
+      private nextStep(): void {
+        if (this._pending.length === 0)
+          return;
+
+        var r = this._pending[0];
+        switch (r.action) {
+          case 'get':
+            r.action = 'waitget';
+            this.getMongo(r.id); // sendPrimaryStore({ detail: 'get', id: r.id });
+            break;
+          case 'waitget':
+            break;
+          case 'save':
+            //this.tryAtomic();
+            break;
+         case 'waitsave': 
+           // Nothing to be done until reply
+           break;
+         default:
+            this._logger.fatal('%s: Unexpected pending action: %j', this.id(), r.action);
+        }
+      }
+
+      private getMongo(id: utils.uid) {
+      }
+
     }
 
     /*

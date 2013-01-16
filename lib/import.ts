@@ -3,3 +3,4 @@
 // license information.
 
 /// <reference path='../defs/node-0.8.d.ts' />
+/// <reference path='../defs/mongodb.d.ts' />

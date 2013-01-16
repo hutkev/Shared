@@ -27,15 +27,11 @@
     <RootNamespace>tshared</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <TypeScriptCompile Include="test-tracker.ts" />
     <TypeScriptCompile Include="unit.ts" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="test-router.ts" />
-    <Content Include="test-commit.ts" />
     <Content Include="test-serial.ts" />
     <Content Include="test-types.ts" />
-    <TypeScriptCompile Include="test-undo.ts" />
     <Content Include="test-utils.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
