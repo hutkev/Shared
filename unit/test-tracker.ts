@@ -6,13 +6,14 @@ module testtracker {
   import utils = shared.utils;
   import tracker = shared.tracker;
   
-  var store: shared.store.PrimaryStore;
+  var store: shared.store.MongoStore = null;
 
   function reset() {
-    if (shared.store.PrimaryStore._primaryStore !== null)
-      shared.store.PrimaryStore._primaryStore.stop();
-    shared.store.PrimaryStore._primaryStore = null;
-    store = new shared.store.PrimaryStore();
+    if (store === null)
+      store = new shared.store.MongoStore();
+    else
+      store.reset();
+
     utils.defaultLogger().disableDebugLogging();
   }
   
@@ -43,9 +44,9 @@ module testtracker {
     test.throws(function () { new tracker.Tracker(store,{}, '12'); }, Error);
 
     var obj = {};
-    var t = new tracker.Tracker(store,{}, '12345678-1234-1234-1234-123456789012');
+    var t = new tracker.Tracker(store,{}, '123456781234567812345678');
     test.ok(typeof t == 'object');
-    test.ok(t.id().toString() == '12345678-1234-1234-1234-123456789012');
+    test.ok(t.id().toString() == '123456781234567812345678');
     test.done();
   };
 
@@ -63,9 +64,9 @@ module testtracker {
     test.throws(function () { new tracker.Tracker(store,[], '12'); }, Error);
 
     var obj = [];
-    var t = new tracker.Tracker(store,{}, '12345678-1234-1234-1234-123456789012');
+    var t = new tracker.Tracker(store,{}, '123456781234567812345678');
     test.ok(typeof t == 'object');
-    test.ok(t.id().toString() == '12345678-1234-1234-1234-123456789012');
+    test.ok(t.id().toString() == '123456781234567812345678');
     test.done();
   };
 
@@ -935,7 +936,7 @@ module testtracker {
 
   export function xstore(test) {
     reset();
-    var s2 = new shared.store.SecondaryStore();
+    var s2 = new shared.store.MongoStore();
     var obj = {};
     test.ok(typeof new tracker.Tracker(s2,obj) === 'object');
 
@@ -1365,5 +1366,4 @@ module testtracker {
 
     test.done();
   }
-
 } // testtracker

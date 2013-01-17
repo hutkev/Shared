@@ -24,7 +24,7 @@ module shared {
       private _pending: any[] = [];           // Outstanding work queue
       private _ostore: utils.Map = null;      // Object lookup
 
-      constructor (host: string, port:number, db: string, collection?: string = 'shared') { 
+      constructor (host?: string = 'localhost', port?:number = 27017, db?: string = 'shared', collection?: string = 'shared') { 
         super();
         this._db = db;
         this._collection = collection;
@@ -34,6 +34,10 @@ module shared {
       atomic(handler: (store: any) => any, callback?: (error: string, arg: any) => void ): void {
         this._pending.push({ action: 'save', fn: handler, cb: callback});
         this.nextStep();
+      }
+
+      reset() {
+        this.resetMtx();
       }
 
       private nextStep(): void {

@@ -27,6 +27,7 @@
     <RootNamespace>tshared</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <TypeScriptCompile Include="test-tracker.ts" />
     <TypeScriptCompile Include="unit.ts" />
   </ItemGroup>
   <ItemGroup>
