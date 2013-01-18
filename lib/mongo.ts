@@ -13,60 +13,446 @@ module shared {
   export module store {
 
     var util = require('util');
+    var rsvp = require('rsvp');
     var mongo = require('mongodb');
+    var bson = require('bson');
 
     export class MongoStore implements Store extends mtx.mtxFactory {
-      private _db: string;
-      private _collection: string;
-      private _mongo: mongodb.Server;
+      private _logger: utils.Logger = utils.defaultLogger();  
 
-      private _logger: utils.Logger;          // Default logger
-      private _pending: any[] = [];           // Outstanding work queue
-      private _ostore: utils.Map = null;      // Object lookup
+      private _dbName: string;                                  // Configuration
+      private _collectionName: string;
 
-      constructor (host?: string = 'localhost', port?:number = 27017, db?: string = 'shared', collection?: string = 'shared') { 
+      private _mongo: mongodb.Server;                           // Database stuff
+      private _db: mongodb.Db;
+      private _collection: rsvp.Promise = null;
+      
+      private _pending: any[] = [];                             // Outstanding work queue
+
+      private _root: rsvp.Promise = null;                       // Root object
+      private _ostore: utils.Map = new utils.Map(utils.hash);   // Cached objects
+
+      constructor (host?: string = 'localhost', port?: number = 27017, db?: string = 'shared', collection?: string = 'shared') {
         super();
-        this._db = db;
-        this._collection = collection;
+        this._dbName = db;
+        this._collectionName = collection;
+
         this._mongo = new mongo.Server(host, port);
+        this._db = new mongo.Db(db, this._mongo, { w: 1 });
+        this._pending.push({ action: 'connect' });
+
+        this._logger.debug('STORE', '%s: Store created', this.id());
       }
 
       atomic(handler: (store: any) => any, callback?: (error: string, arg: any) => void ): void {
-        this._pending.push({ action: 'save', fn: handler, cb: callback});
-        this.nextStep();
+        var that = this;
+        
+        that.getRoot().then(function (root) {
+          that.tryHandler(handler,root).then(function (ret) {
+            // Completed
+            if (utils.isValue(callback)) {
+              callback(null, ret);
+            }
+          }, function (err) {
+            if (err) {
+              // Some error during processing
+              if (utils.isValue(callback))
+                callback(err, null);
+            } else {
+              // Needs re-try
+              that.atomic(handler, callback);
+            }
+          });
+        }, function (err) {
+          // No root object
+          if (utils.isValue(callback))
+            callback(err, null);
+        });
       }
 
-      reset() {
-        this.resetMtx();
-      }
+      private tryHandler(handler: (store: any) => any, root: any, done? = new rsvp.Promise()) {
+        var that = this;
+        try {
+          var ret = handler(root)
+          done.resolve(ret);
+        } catch (e) {
 
-      private nextStep(): void {
-        if (this._pending.length === 0)
-          return;
+          that.undoMtx(this._ostore); // Force a reset
 
-        var r = this._pending[0];
-        switch (r.action) {
-          case 'get':
-            r.action = 'waitget';
-            this.getMongo(r.id); // sendPrimaryStore({ detail: 'get', id: r.id });
-            break;
-          case 'waitget':
-            break;
-          case 'save':
-            //this.tryAtomic();
-            break;
-         case 'waitsave': 
-           // Nothing to be done until reply
-           break;
-         default:
-            this._logger.fatal('%s: Unexpected pending action: %j', this.id(), r.action);
+          // Cache miss when trying to commit
+          if (e instanceof tracker.UnknownReference) {
+            var unk: tracker.UnknownReference = e;
+            var missing = that._ostore.find(unk.missing());
+            if (missing === null) {
+              this.getObject(unk.missing()).then(function (obj) {
+                if (unk.id() !== undefined) {
+                  var assign:any = that._ostore.find(unk.id());
+                  if (assign !== null) {
+                    that.disable++;
+                    assign.obj[unk.prop()] = obj;
+                    that.disable--;
+                  }
+                }
+                done.reject(null);  // A retry request
+              }, function (err) {
+                done.reject(err);
+              });
+            } else {
+              // Commit available to the prop
+              var to = this._ostore.find(unk.id());
+              that.disable++;
+              to.obj[unk.prop()] = missing.obj;
+              that.disable--;
+              done.reject(null);  // A retry request
+            }
+          } else {
+            done.reject(e);
+          }
         }
+        return done;
       }
 
-      private getMongo(id: utils.uid) {
+      private fail(promise, fmt: string, ...msgs: any[]) {
+        var msg=this._logger.format('', fmt, msgs);
+        this._logger.debug('STORE', msg);
+        promise.reject(new Error(msg));
+      }
+
+      private getCollection() {
+        var that = this;
+
+        // Shortcut if we have been here before
+        if (that._collection!==null) {
+          return that._collection;
+        }
+        that._collection = new rsvp.Promise();
+        var done = that._collection;
+
+        // Open DB
+        that._logger.debug('STORE', '%s: Connecting to database - %s', that.id(), that._dbName);
+        that._db.open(function (err, db) {
+          if (err) {
+            that.fail(done, '%s: Unable to open db: %s : %s', that.id(), that._dbName, err.message);
+          } else {
+            // Open Collection
+            that._logger.debug('STORE', '%s: Opening collection - %s', that.id(), that._collectionName);
+            that._db.createCollection(that._collectionName, function (err, collection) {
+              if (err) {
+                that.fail(done, '%s: Unable to open collection: %s : %s', that.id(), that._collectionName, err.message);
+              } else {
+                // Find Root
+                that._logger.debug('STORE', '%s: Searching for root object', that.id());
+                collection.findOne({ _id: new bson.ObjectId(rootUID.toString()) }, function (err, doc) {
+                  if (err) {
+                    that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
+                  } else {
+                    if (doc === null) {
+                      // Add missing root
+                      that._logger.debug('STORE', '%s: Creating new root object', that.id());
+                      var fake = { _id: new bson.ObjectId('000000000000000000000000'), _rev: 0, _type: 'Object'};
+                      collection.insert(fake, { safe: true }, function (err, records) {
+                        if (err) {
+                          that.fail(done, '%s: Unable to create root node in: %s : %s', that.id(), that._collectionName, err.message);
+                        } else {
+                          done.resolve(collection);
+                        }
+                      });
+                    } else {
+                      that._logger.debug('STORE', '%s: Existing root object found', that.id());
+                      done.resolve(collection);
+                    }
+                  }
+                });
+              }
+            });
+          }
+        });
+        return done;
+      }
+
+      private getObject(id: utils.uid, done?:rsvp.Promise = new rsvp.Promise()) : rsvp.Promise {
+        var that = this;
+
+        this.getCollection().then(function (collection) {
+
+          that._logger.debug('STORE', '%s: Searching for object: %s', that.id(), id);
+          collection.findOne({ _id: new bson.ObjectId(id) }, function (err, doc) {
+            if (err) {
+              that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
+            } else {
+              if (doc === null) {
+                that.fail(done, '%s: Object missing in store: %s : %s', that.id(), id);
+              } else {
+                that._logger.debug('STORE', '%s: Loading object: %s', that.id(), id);
+                // Load the new object
+                var p = that._ostore.find(id);
+                var rec = that.readObject(doc, p !== null ? p.obj : null);
+
+                // Reset tracking
+                var t = tracker.getTrackerUnsafe(rec.obj);
+                if (t === null) {
+                  t = new tracker.Tracker(that, rec.obj, rec.id, rec.rev);
+                  that._ostore.insert(t.id(), { ref: 0, obj: rec.obj });
+                } else {
+                  t.setRev(rec.rev);
+                  t.retrack(rec.obj);
+                }
+
+                // Return object
+                done.resolve(rec.obj);     
+              }
+            }
+          });
+        });
+        return done;
+      }
+
+      private getRoot(): rsvp.Promise {
+        var that = this;
+        
+        if (that._root !== null) {
+          return that._root;
+        } 
+        
+        var done = new rsvp.Promise();
+        that._root = done;
+
+        that.getObject(rootUID).then(function (obj) {
+          done.resolve(obj);
+        }, function (err) {
+          done.reject(err);
+        });
+
+        return done;
+      }
+
+      private revisionCheck(id: utils.uid, revision: number) {
+        this._logger.debug('STORE', '%s: revisionCheck(%s,%s)', this.id(), id, revision);
+        var that = this;
+        var promise = new rsvp.Promise();
+        /*
+
+        var c = this._collection.find({ _id: new bson.ObjectId(id.toString())});
+        c.count(function (err, num) {
+          that._logger.debug('STORE', '%s: revisionCheck count complete', that.id());
+          if (err) promise.reject(err.message);
+          if (num === 1)
+            promise.resolve(null);
+          else
+            promise.resolve(id);
+        });
+        */
+        return promise;
+      }
+
+      private checkReadset(rset: any[]) {
+        this._logger.debug('STORE', '%s: checkReadset(%d)', this.id(), rset.length);
+        utils.dassert(rset.length !== 0);
+
+        var fails = [];
+        for (var i = 0; i < rset.length; i++) {
+          fails.push(this.revisionCheck(rset[i].id, rset[i].rev));
+        }
+        return rsvp.all(fails);
+      }
+
+      private commitMtx(mtx: any) : any {
+        this._logger.debug('STORE', '%s: commitMtx()', this.id(), mtx);
+        utils.dassert(utils.isArray(mtx) && mtx.length ===3)
+        var that = this;
+
+        var p = new rsvp.Promise();
+        this.checkReadset(mtx[0]).then(
+          function (dead) {
+            that._logger.debug('STORE', '%s: checkReadset complete', that.id(), mtx);
+            p.resolve(dead.filter(function (v) { v !== null }));
+          }, function (err) {
+            that._logger.debug('STORE', '%s: checkReadset failed', that.id(), mtx);
+            p.reject(err);
+          }
+        );
+
+        return p;
+
+        /*
+        // Load in nset
+        var nset = mtx[1];
+        for (var i = 0; i < nset.length; i++) {
+          var id = nset[i].id;
+          utils.dassert(this._ostore.find(id) === null);
+
+          var obj = serial.readObject(nset[i].value);
+          this.resolveReferences(obj);
+          new tracker.Tracker(this, obj, id, 0);
+          this._ostore.insert(id, { ref: 0, obj: obj });
+        }
+
+        // Write changes & inc revs
+        var cset = mtx[2];
+        var wset = new utils.StringSet();
+        for (var i = 0; i < cset.length; i++) {
+          var e = cset[i];
+
+          // Write prop
+          if (e.write !== undefined) {
+            // Locate target and uprev & ref if needed
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            var val = serial.readValue(e.value);
+            if (val instanceof serial.Reference) {
+              var trec = this._ostore.find(val.id());
+              if (!utils.isObjectOrArray(trec.obj))
+                this._logger.fatal('%s: cset contains unknown object ref', val.id);
+              rec.obj[e.write] = trec.obj;
+            } else {
+              rec.obj[e.write] = val;
+            }
+          }
+
+          // Delete Prop
+          else if (e.del !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+            delete rec.obj[e.del];
+          }
+
+          // Re-init array
+          else if (e.reinit !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            rec.obj.length = 0;
+            serial.readObject(e.reinit, rec.obj);
+          } 
+
+          // Reverse array
+          else if (e.reverse !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            rec.obj.reverse();
+          } 
+
+          // Shift array
+          else if (e.shift !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            rec.obj.splice(e.shift,e.size);
+          } 
+
+          // Unshift array
+          else if (e.unshift !== undefined) {
+            var rec = this._ostore.find(e.id);
+            if (rec === null)
+              this._logger.fatal('%s: cset contains unknown object', e.id);
+            if (!utils.isArray(rec.obj))
+              this._logger.fatal('%s: cset re-init on non-array', e.id);
+            if (!wset.has(e.id)) {
+              wset.put(e.id);
+              rec.obj._tracker._rev++;
+            }
+
+            var args = [e.unshift,0];
+            for (var j = 0 ; j < e.size; j++)
+              args.push(undefined);
+            Array.prototype.splice.apply(rec.obj, args);
+          } 
+          
+          else {
+            this._logger.fatal('%s: cset contains unexpected command', e.id);
+          }
+        }
+        */
+
+        return null;
+      }
+
+      private readObject(doc: any, proto?: any) {
+
+        // Sort out proto
+        if (doc._type === 'Object') {
+          if (!utils.isValue(proto)) {
+            proto = {};
+          } else {
+            utils.dassert(utils.isObject(proto));
+          }
+        } else if (doc._type === 'Array') {
+          if (!utils.isValue(proto)) {
+            proto = [];
+          } else {
+            utils.dassert(utils.isArray(proto));
+            // Prop delete does not work well on arrays so zero proto
+            proto.length = 0;
+          }
+        } else {
+          this._logger.fatal('%s: Unexpected document type: %j', this.id(), doc._type);
+        }
+
+        // Read props
+        var dkeys = Object.keys(doc);
+        var dk = 0;
+        var pkeys = Object.keys(proto);
+        var pk = 0;
+
+        while (true) {
+          // Run out?
+          if (dk === dkeys.length)
+            break;
+
+          // Read prop name
+          var prop = dkeys[dk];
+          if (prop !== '_id' && prop !== '_rev' && prop !== '_type') {
+
+            // Delete rest of proto props if does not match what is being read
+            if (pk !== -1 && prop != pkeys[pk]) {
+              for (var i = pk; i < pkeys.length; i++)
+                delete proto[pkeys[i]];
+              pk = -1;
+            }
+
+            // Update proto value
+            proto[prop] = doc[dkeys[dk]];
+          }
+          dk++;
+        }
+        return { obj: proto, id: doc._id, rev: doc._rev };
       }
 
     }
+
 
     /*
     export class SecondaryStore implements Store extends mtx.mtxFactory {

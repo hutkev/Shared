@@ -15,7 +15,7 @@ module shared {
      * Create a new store, this always has to be a secondary at the moment
      * to allow for undo actions.
      */
-    export function createStore(host: string, port:number, db: string, collection?: string): Store {
+    export function createStore(host?: string, port?:number, db?: string, collection?: string): Store {
       return new MongoStore(host, port, db, collection);
     }
 

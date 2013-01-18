@@ -20,6 +20,9 @@
 module shared {
   export module tracker {
 
+    var BSON = require('bson');
+    var Buffer = require('buffer');
+
     /*
      * Tracker cache interface. Used to store change details that are 
      * generated when traversing/changing tracked objects & arrays. 
@@ -133,6 +136,7 @@ module shared {
       private _rev;
       private _type: types.TypeDesc;
       public _lastTx: number;
+      public toBSON: () => any;
 
       constructor(tc: TrackCache, obj: any, id: utils.uid = utils.UID(), rev?: number) {
         utils.dassert(utils.isObject(tc));
@@ -157,6 +161,12 @@ module shared {
         Object.defineProperty(obj, '_tracker', {
           value: this
         });
+
+        // Add toBSON support, this sadly has to wrap the object
+        // TODO What about GC
+        this.toBSON = function () {
+          return this.bson(obj);
+        }
 
         // Start tracking
         if (obj instanceof Array) {
@@ -222,6 +232,21 @@ module shared {
           this._rev = to;
         return this._rev;
       };
+
+      // Create a fake object for BSON
+      bson(obj: any) {
+        utils.dassert(getTracker(obj) === this);
+
+        var fake :any = {};
+        for (var prop in obj) {
+          // TODO filter properties
+          fake[prop] = obj[prop];
+        }
+        fake._id = new BSON.ObjectId(this.id().toString())
+        fake._rev = this.rev();
+        fake._type = obj.constructor.name;
+        return fake;
+      }
 
       /*
        * has a change been recorded against the object

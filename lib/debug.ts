@@ -116,7 +116,7 @@ module shared {
           this._next.log(LogLevel.FATAL, fmt, msgs);
       }
 
-      private format(type: string, fmt: string, args: any[]) : string {
+      public format(type: string, fmt: string, args: any[]) : string {
         var m = new Date().toISOString() + ' ' + this._prefix + ' ' + type + ' ';
         var i = 0;
         var len = args.length;

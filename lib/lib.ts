@@ -9,6 +9,7 @@
 /// <reference path='collect.ts' />
 /// <reference path='types.ts' />
 /// <reference path='tracker.ts' />
+/// <reference path='mongo.ts' />
 
 var ver = '0.2.0';
 
