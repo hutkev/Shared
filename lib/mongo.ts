@@ -25,11 +25,11 @@ module shared {
 
       private _mongo: mongodb.Server;                           // Database stuff
       private _db: mongodb.Db;
-      private _collection: rsvp.Promise = null;
+      private _collection: mongodb.Collection = null;
       
       private _pending: any[] = [];                             // Outstanding work queue
 
-      private _root: rsvp.Promise = null;                       // Root object
+      private _root: any = null;                                // Root object
       private _ostore: utils.Map = new utils.Map(utils.hash);   // Cached objects
 
       constructor (host?: string = 'localhost', port?: number = 27017, db?: string = 'shared', collection?: string = 'shared') {
@@ -39,45 +39,75 @@ module shared {
 
         this._mongo = new mongo.Server(host, port);
         this._db = new mongo.Db(db, this._mongo, { w: 1 });
-        this._pending.push({ action: 'connect' });
 
         this._logger.debug('STORE', '%s: Store created', this.id());
       }
 
       atomic(handler: (store: any) => any, callback?: (error: string, arg: any) => void ): void {
-        var that = this;
-        
-        that.getRoot().then(function (root) {
-          that.tryHandler(handler,root).then(function (ret) {
-            // Completed
-            if (utils.isValue(callback)) {
-              callback(null, ret);
-            }
-          }, function (err) {
-            if (err) {
-              // Some error during processing
-              if (utils.isValue(callback))
-                callback(err, null);
-            } else {
-              // Needs re-try
-              that.atomic(handler, callback);
-            }
-          });
-        }, function (err) {
-          // No root object
-          if (utils.isValue(callback))
-            callback(err, null);
-        });
+
+        // Queue
+        this._pending.push({ handler: handler, callback: callback });
+
+        // Process queue
+        this.processPending();
       }
 
-      private tryHandler(handler: (store: any) => any, root: any, done? = new rsvp.Promise()) {
+      private processPending(recurse: bool = false) {
+        // Processing is chained, so only start if only 1 to do
+        if ((recurse && this._pending.length > 0) ||
+          (!recurse && this._pending.length === 1)) {
+
+          var that = this;
+          var pending = this._pending[0];
+          that.getRoot().then(function (root) {
+            that.tryHandler(pending.handler).then(function (ret) {
+              // Completed
+              if (utils.isValue(pending.callback)) {
+                pending.callback(null, ret);
+              }
+              that._pending.shift();
+              that.processPending(true);
+            }, function (err) {
+              if (err) {
+                // Some error during processing
+                if (utils.isValue(pending.callback))
+                  pending.callback(err, null);
+                that._pending.shift();
+                that.processPending(true);
+              } else {
+                // Needs re-try
+                that.processPending(true);
+              }
+            });
+          }, function (err) {
+            // No root object
+            if (utils.isValue(pending.callback))
+              pending.callback(err, null);
+            that._pending.shift();
+            that.processPending(true);
+          });
+        }
+      }
+
+      private tryHandler(handler: (store: any) => any, done? = new rsvp.Promise()) {
         var that = this;
         try {
-          var ret = handler(root)
-          done.resolve(ret);
+          that.markRead(that._root);
+          var ret = handler(that._root)
+
+          that.commitMtx(that.mtx(that._ostore)).then(function (refresh) {
+            if (refresh.length!==0) {
+              console.log('OUT OF DATE');
+              console.log(refresh);
+            }
+            done.resolve(ret);
+          }, function (err) {
+            done.reject(err);
+          });
         } catch (e) {
 
-          that.undoMtx(this._ostore); // Force a reset
+          // Reset any changes
+          that.undoMtx(this._ostore); 
 
           // Cache miss when trying to commit
           if (e instanceof tracker.UnknownReference) {
@@ -112,127 +142,12 @@ module shared {
         return done;
       }
 
-      private fail(promise, fmt: string, ...msgs: any[]) {
-        var msg=this._logger.format('', fmt, msgs);
-        this._logger.debug('STORE', msg);
-        promise.reject(new Error(msg));
-      }
-
-      private getCollection() {
-        var that = this;
-
-        // Shortcut if we have been here before
-        if (that._collection!==null) {
-          return that._collection;
-        }
-        that._collection = new rsvp.Promise();
-        var done = that._collection;
-
-        // Open DB
-        that._logger.debug('STORE', '%s: Connecting to database - %s', that.id(), that._dbName);
-        that._db.open(function (err, db) {
-          if (err) {
-            that.fail(done, '%s: Unable to open db: %s : %s', that.id(), that._dbName, err.message);
-          } else {
-            // Open Collection
-            that._logger.debug('STORE', '%s: Opening collection - %s', that.id(), that._collectionName);
-            that._db.createCollection(that._collectionName, function (err, collection) {
-              if (err) {
-                that.fail(done, '%s: Unable to open collection: %s : %s', that.id(), that._collectionName, err.message);
-              } else {
-                // Find Root
-                that._logger.debug('STORE', '%s: Searching for root object', that.id());
-                collection.findOne({ _id: new bson.ObjectId(rootUID.toString()) }, function (err, doc) {
-                  if (err) {
-                    that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
-                  } else {
-                    if (doc === null) {
-                      // Add missing root
-                      that._logger.debug('STORE', '%s: Creating new root object', that.id());
-                      var fake = { _id: new bson.ObjectId('000000000000000000000000'), _rev: 0, _type: 'Object'};
-                      collection.insert(fake, { safe: true }, function (err, records) {
-                        if (err) {
-                          that.fail(done, '%s: Unable to create root node in: %s : %s', that.id(), that._collectionName, err.message);
-                        } else {
-                          done.resolve(collection);
-                        }
-                      });
-                    } else {
-                      that._logger.debug('STORE', '%s: Existing root object found', that.id());
-                      done.resolve(collection);
-                    }
-                  }
-                });
-              }
-            });
-          }
-        });
-        return done;
-      }
-
-      private getObject(id: utils.uid, done?:rsvp.Promise = new rsvp.Promise()) : rsvp.Promise {
-        var that = this;
-
-        this.getCollection().then(function (collection) {
-
-          that._logger.debug('STORE', '%s: Searching for object: %s', that.id(), id);
-          collection.findOne({ _id: new bson.ObjectId(id) }, function (err, doc) {
-            if (err) {
-              that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
-            } else {
-              if (doc === null) {
-                that.fail(done, '%s: Object missing in store: %s : %s', that.id(), id);
-              } else {
-                that._logger.debug('STORE', '%s: Loading object: %s', that.id(), id);
-                // Load the new object
-                var p = that._ostore.find(id);
-                var rec = that.readObject(doc, p !== null ? p.obj : null);
-
-                // Reset tracking
-                var t = tracker.getTrackerUnsafe(rec.obj);
-                if (t === null) {
-                  t = new tracker.Tracker(that, rec.obj, rec.id, rec.rev);
-                  that._ostore.insert(t.id(), { ref: 0, obj: rec.obj });
-                } else {
-                  t.setRev(rec.rev);
-                  t.retrack(rec.obj);
-                }
-
-                // Return object
-                done.resolve(rec.obj);     
-              }
-            }
-          });
-        });
-        return done;
-      }
-
-      private getRoot(): rsvp.Promise {
-        var that = this;
-        
-        if (that._root !== null) {
-          return that._root;
-        } 
-        
-        var done = new rsvp.Promise();
-        that._root = done;
-
-        that.getObject(rootUID).then(function (obj) {
-          done.resolve(obj);
-        }, function (err) {
-          done.reject(err);
-        });
-
-        return done;
-      }
-
-      private revisionCheck(id: utils.uid, revision: number) {
+      private revisionCheck(id: utils.uid, revision: number) : rsvp.Promise {
         this._logger.debug('STORE', '%s: revisionCheck(%s,%s)', this.id(), id, revision);
         var that = this;
         var promise = new rsvp.Promise();
-        /*
 
-        var c = this._collection.find({ _id: new bson.ObjectId(id.toString())});
+        var c = this._collection.find({ _id: new bson.ObjectId(id.toString()), _rev: revision});
         c.count(function (err, num) {
           that._logger.debug('STORE', '%s: revisionCheck count complete', that.id());
           if (err) promise.reject(err.message);
@@ -241,11 +156,10 @@ module shared {
           else
             promise.resolve(id);
         });
-        */
         return promise;
       }
 
-      private checkReadset(rset: any[]) {
+      private checkReadset(rset: any[]) : rsvp.Promise {
         this._logger.debug('STORE', '%s: checkReadset(%d)', this.id(), rset.length);
         utils.dassert(rset.length !== 0);
 
@@ -256,7 +170,7 @@ module shared {
         return rsvp.all(fails);
       }
 
-      private commitMtx(mtx: any) : any {
+      private commitMtx(mtx: any) : rsvp.Promise {
         this._logger.debug('STORE', '%s: commitMtx()', this.id(), mtx);
         utils.dassert(utils.isArray(mtx) && mtx.length ===3)
         var that = this;
@@ -264,10 +178,10 @@ module shared {
         var p = new rsvp.Promise();
         this.checkReadset(mtx[0]).then(
           function (dead) {
-            that._logger.debug('STORE', '%s: checkReadset complete', that.id(), mtx);
+            that._logger.debug('STORE', '%s: checkReadset passed', that.id());
             p.resolve(dead.filter(function (v) { v !== null }));
           }, function (err) {
-            that._logger.debug('STORE', '%s: checkReadset failed', that.id(), mtx);
+            that._logger.debug('STORE', '%s: checkReadset failed', that.id());
             p.reject(err);
           }
         );
@@ -400,6 +314,116 @@ module shared {
         return null;
       }
 
+
+      private getCollection() {
+        var that = this;
+        var done = new rsvp.Promise();
+
+        // Shortcut if we have been here before
+        if (that._collection!==null) {
+          done.resolve(that._collection)
+          return done;
+        }
+
+        // Open DB
+        that._logger.debug('STORE', '%s: Connecting to database - %s', that.id(), that._dbName);
+        that._db.open(function (err, db) {
+          if (err) {
+            that.fail(done, '%s: Unable to open db: %s : %s', that.id(), that._dbName, err.message);
+          } else {
+            // Open Collection
+            that._logger.debug('STORE', '%s: Opening collection - %s', that.id(), that._collectionName);
+            that._db.createCollection(that._collectionName, function (err, collection) {
+              if (err) {
+                that.fail(done, '%s: Unable to open collection: %s : %s', that.id(), that._collectionName, err.message);
+              } else {
+                // Find Root
+                that._logger.debug('STORE', '%s: Searching for root object', that.id());
+                collection.findOne({ _id: new bson.ObjectId(rootUID.toString()) }, function (err, doc) {
+                  if (err) {
+                    that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
+                  } else {
+                    if (doc === null) {
+                      // Add missing root
+                      that._logger.debug('STORE', '%s: Creating new root object', that.id());
+                      var fake = { _id: new bson.ObjectId('000000000000000000000000'), _rev: 0, _type: 'Object'};
+                      collection.insert(fake, { safe: true }, function (err, records) {
+                        if (err) {
+                          that.fail(done, '%s: Unable to create root node in: %s : %s', that.id(), that._collectionName, err.message);
+                        } else {
+                          that._collection = collection;
+                          done.resolve(collection);
+                        }
+                      });
+                    } else {
+                      that._logger.debug('STORE', '%s: Existing root object found', that.id());
+                      that._collection = collection;
+                      done.resolve(collection);
+                    }
+                  }
+                });
+              }
+            });
+          }
+        });
+        return done;
+      }
+
+      private getObject(id: utils.uid, done?:rsvp.Promise = new rsvp.Promise()) : rsvp.Promise {
+        var that = this;
+
+        this.getCollection().then(function (collection) {
+
+          that._logger.debug('STORE', '%s: Searching for object: %s', that.id(), id);
+          collection.findOne({ _id: new bson.ObjectId(id) }, function (err, doc) {
+            if (err) {
+              that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
+            } else {
+              if (doc === null) {
+                that.fail(done, '%s: Object missing in store: %s : %s', that.id(), id);
+              } else {
+                that._logger.debug('STORE', '%s: Loading object: %s', that.id(), id);
+                // Load the new object
+                var p = that._ostore.find(id);
+                var rec = that.readObject(doc, p !== null ? p.obj : null);
+
+                // Reset tracking
+                var t = tracker.getTrackerUnsafe(rec.obj);
+                if (t === null) {
+                  t = new tracker.Tracker(that, rec.obj, rec.id, rec.rev);
+                  that._ostore.insert(t.id(), { ref: 0, obj: rec.obj });
+                } else {
+                  t.setRev(rec.rev);
+                  t.retrack(rec.obj);
+                }
+
+                // Return object
+                done.resolve(rec.obj);     
+              }
+            }
+          });
+        });
+        return done;
+      }
+
+      private getRoot(): rsvp.Promise {
+        var that = this;
+        var done = new rsvp.Promise();
+        
+        if (that._root !== null) {
+          done.resolve(that._root);
+        } else {
+          that.getObject(rootUID).then(function (obj) {
+            that._root = obj;
+            done.resolve(obj);
+          }, function (err) {
+            done.reject(err);
+          });
+        }
+
+        return done;
+      }
+
       private readObject(doc: any, proto?: any) {
 
         // Sort out proto
@@ -451,6 +475,11 @@ module shared {
         return { obj: proto, id: doc._id, rev: doc._rev };
       }
 
+      private fail(promise, fmt: string, ...msgs: any[]) {
+        var msg=this._logger.format('', fmt, msgs);
+        this._logger.debug('STORE', msg);
+        promise.reject(new Error(msg));
+      }
     }
 
 
