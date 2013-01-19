@@ -94,17 +94,32 @@ module shared {
         try {
           that.markRead(that._root);
           var ret = handler(that._root)
+          try {
+            that._logger.debug('STORE', 'Attempting commit');
+            that.commitMtx(that.mtx(that._ostore)).then(function (refresh) {
 
-          that.commitMtx(that.mtx(that._ostore)).then(function (refresh) {
-            if (refresh.length!==0) {
-              console.log('OUT OF DATE');
-              console.log(refresh);
-            }
-            done.resolve(ret);
-          }, function (err) {
-            done.reject(err);
-          });
+              if (refresh.length !== 0) {
+                that._logger.debug('STORE', 'Objects need refresh after commit failure');
+
+                that.refreshSet(refresh).then(function () {
+                  that._logger.debug('STORE', 'Starting re-try');
+                  done.reject(null);  // A retry request
+                }, function (err) {
+                  done.reject(err);
+                });
+              } else {
+                // It's passed :-)
+                that._logger.debug('STORE', 'Update completed successfully');
+                done.resolve(ret);
+              }
+            }, function (err) {
+              done.reject(err);
+            });
+          } catch (e) {
+            that._logger.fatal('Unhandled exception', e);
+          }
         } catch (e) {
+          that._logger.debug('STORE', 'Exception during try: ',e);
 
           // Reset any changes
           that.undoMtx(this._ostore); 
@@ -147,14 +162,15 @@ module shared {
         var that = this;
         var promise = new rsvp.Promise();
 
-        var c = this._collection.find({ _id: new bson.ObjectId(id.toString()), _rev: revision});
-        c.count(function (err, num) {
-          that._logger.debug('STORE', '%s: revisionCheck count complete', that.id());
-          if (err) promise.reject(err.message);
-          if (num === 1)
-            promise.resolve(null);
-          else
-            promise.resolve(id);
+        this._collection.find({ _id: new bson.ObjectId(id.toString()), _rev: revision}).count(function (err, num) {
+          if (err) {
+            promise.reject(err.message);
+          } else {
+            if (num === 1)
+              promise.resolve(null);
+            else
+              promise.resolve(id.toString());
+          }
         });
         return promise;
       }
@@ -177,15 +193,16 @@ module shared {
 
         var p = new rsvp.Promise();
         this.checkReadset(mtx[0]).then(
-          function (dead) {
-            that._logger.debug('STORE', '%s: checkReadset passed', that.id());
-            p.resolve(dead.filter(function (v) { v !== null }));
+          function (fails) {
+            var failed=fails.filter(function (v) {return v !== null})
+            if (failed.length>0)
+              that._logger.debug('STORE', '%s: checkReadset failures', that.id(),failed);
+            p.resolve(failed);
           }, function (err) {
             that._logger.debug('STORE', '%s: checkReadset failed', that.id());
             p.reject(err);
           }
         );
-
         return p;
 
         /*
@@ -314,6 +331,13 @@ module shared {
         return null;
       }
 
+      private refreshSet(failed: utils.uid[]): rsvp.Promise {
+        var fails = [];
+        for (var i = 0; i < failed.length; i++) {
+          fails.push(this.getObject(failed[i]));
+        }
+        return rsvp.all(fails);
+      }
 
       private getCollection() {
         var that = this;
@@ -346,7 +370,7 @@ module shared {
                     if (doc === null) {
                       // Add missing root
                       that._logger.debug('STORE', '%s: Creating new root object', that.id());
-                      var fake = { _id: new bson.ObjectId('000000000000000000000000'), _rev: 0, _type: 'Object'};
+                      var fake = { _id: new bson.ObjectId(rootUID), _rev: 0, _type: 'Object'};
                       collection.insert(fake, { safe: true }, function (err, records) {
                         if (err) {
                           that.fail(done, '%s: Unable to create root node in: %s : %s', that.id(), that._collectionName, err.message);
@@ -369,7 +393,8 @@ module shared {
         return done;
       }
 
-      private getObject(id: utils.uid, done?:rsvp.Promise = new rsvp.Promise()) : rsvp.Promise {
+      private getObject(id: utils.uid) : rsvp.Promise {
+        var done = new rsvp.Promise();
         var that = this;
 
         this.getCollection().then(function (collection) {

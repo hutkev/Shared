@@ -116,8 +116,24 @@ module shared {
           this._next.log(LogLevel.FATAL, fmt, msgs);
       }
 
+      public write(msg: string) {
+        this._to.write(msg);
+        if (this._next)
+          this._next.write(msg);
+      }
+
+      public trace(fmt: string, ...msgs: any[]): void {
+        var e = new Error;
+        e.name = 'Trace';
+        e.message = this.format('', fmt, msgs);
+        Error.captureStackTrace(e, arguments.callee);
+        this.write(e.stack+'\n');
+      }
+
       public format(type: string, fmt: string, args: any[]) : string {
-        var m = new Date().toISOString() + ' ' + this._prefix + ' ' + type + ' ';
+        var m = new Date().toISOString() + ' ' + this._prefix + ' '
+        if (type.length)
+          m += (type + ' ');
         var i = 0;
         var len = args.length;
         var str = m + String(fmt).replace(/%[sdj%]/g, function (x) {
