@@ -17,6 +17,10 @@ module shared {
     var mongo = require('mongodb');
     var bson = require('bson');
 
+    var MINLOCK: number = 1;
+    var CHECKRAND: number = 100;
+    var MAXLOCK: number = 10000;
+
     export class MongoStore implements Store extends mtx.mtxFactory {
       private _logger: utils.Logger = utils.defaultLogger();  
 
@@ -30,7 +34,9 @@ module shared {
       private _pending: any[] = [];                             // Outstanding work queue
 
       private _root: any = null;                                // Root object
-      private _ostore: utils.Map = new utils.Map(utils.hash);   // Cached objects
+      private _cache = new shared.mtx.ObjectCache();            // Cached objects
+
+      private _lockRand: string;                                // For checking for lock changes
 
       constructor (host?: string = 'localhost', port?: number = 27017, db?: string = 'shared', collection?: string = 'shared') {
         super();
@@ -95,43 +101,45 @@ module shared {
           that.markRead(that._root);
           var ret = handler(that._root)
           try {
-            that._logger.debug('STORE', 'Attempting commit');
-            that.commitMtx(that.mtx(that._ostore)).then(function (refresh) {
-
-              if (refresh.length !== 0) {
-                that._logger.debug('STORE', 'Objects need refresh after commit failure');
-
-                that.refreshSet(refresh).then(function () {
-                  that._logger.debug('STORE', 'Starting re-try');
-                  done.reject(null);  // A retry request
-                }, function (err) {
-                  done.reject(err);
-                });
-              } else {
-                // It's passed :-)
-                that._logger.debug('STORE', 'Update completed successfully');
-                done.resolve(ret);
-              }
+            that._logger.debug('STORE', '%s: Attempting commit',that.id());
+            that.commitMtx(that.mtx(that._cache)).then(function () {
+              // It's passed :-)
+              that._logger.debug('STORE', '%s: Update completed successfully',that.id());
+              that.okMtx(that._cache);
+              done.resolve(ret);
             }, function (err) {
-              done.reject(err);
+              if (utils.isArray(err)) {
+                if (err.length !== 0) {
+                  that._logger.debug('STORE', 'Objects need refresh after commit failure');
+                  that.undoMtx(this._cache,false); 
+                  that.refreshSet(err).then(function () {
+                    that._logger.debug('STORE', 'Starting re-try');
+                    done.reject(null);  // A retry request
+                  }, function (err) {
+                    done.reject(err);
+                  });
+                }
+              } else {
+                done.reject(err);
+              }
             });
           } catch (e) {
-            that._logger.fatal('Unhandled exception', e);
+            that._logger.fatal('Unhandled exception', e.stack);
           }
         } catch (e) {
-          that._logger.debug('STORE', 'Exception during try: ',e);
+          that._logger.debug('STORE', 'Exception during try: ',e.stack);
 
           // Reset any changes
-          that.undoMtx(this._ostore); 
+          that.undoMtx(this._cache); 
 
           // Cache miss when trying to commit
           if (e instanceof tracker.UnknownReference) {
             var unk: tracker.UnknownReference = e;
-            var missing = that._ostore.find(unk.missing());
+            var missing = that._cache.find(unk.missing());
             if (missing === null) {
               this.getObject(unk.missing()).then(function (obj) {
                 if (unk.id() !== undefined) {
-                  var assign:any = that._ostore.find(unk.id());
+                  var assign:any = that._cache.find(unk.id());
                   if (assign !== null) {
                     that.disable++;
                     assign.obj[unk.prop()] = obj;
@@ -144,9 +152,9 @@ module shared {
               });
             } else {
               // Commit available to the prop
-              var to = this._ostore.find(unk.id());
+              var to = this._cache.find(unk.id());
               that.disable++;
-              to.obj[unk.prop()] = missing.obj;
+              to.obj[unk.prop()] = missing;
               that.disable--;
               done.reject(null);  // A retry request
             }
@@ -157,53 +165,40 @@ module shared {
         return done;
       }
 
-      private revisionCheck(id: utils.uid, revision: number) : rsvp.Promise {
-        this._logger.debug('STORE', '%s: revisionCheck(%s,%s)', this.id(), id, revision);
-        var that = this;
-        var promise = new rsvp.Promise();
-
-        this._collection.find({ _id: new bson.ObjectId(id.toString()), _rev: revision}).count(function (err, num) {
-          if (err) {
-            promise.reject(err.message);
-          } else {
-            if (num === 1)
-              promise.resolve(null);
-            else
-              promise.resolve(id.toString());
-          }
-        });
-        return promise;
-      }
-
-      private checkReadset(rset: any[]) : rsvp.Promise {
-        this._logger.debug('STORE', '%s: checkReadset(%d)', this.id(), rset.length);
-        utils.dassert(rset.length !== 0);
-
-        var fails = [];
-        for (var i = 0; i < rset.length; i++) {
-          fails.push(this.revisionCheck(rset[i].id, rset[i].rev));
-        }
-        return rsvp.all(fails);
-      }
-
       private commitMtx(mtx: any) : rsvp.Promise {
         this._logger.debug('STORE', '%s: commitMtx()', this.id(), mtx);
         utils.dassert(utils.isArray(mtx) && mtx.length ===3)
         var that = this;
 
-        var p = new rsvp.Promise();
-        this.checkReadset(mtx[0]).then(
-          function (fails) {
-            var failed=fails.filter(function (v) {return v !== null})
-            if (failed.length>0)
-              that._logger.debug('STORE', '%s: checkReadset failures', that.id(),failed);
-            p.resolve(failed);
-          }, function (err) {
-            that._logger.debug('STORE', '%s: checkReadset failed', that.id());
-            p.reject(err);
-          }
-        );
-        return p;
+        // If not many new objects just take the lock
+        var prelock = false;
+        curP = new rsvp.Promise();
+        curP.resolve();
+        var curP: rsvp.Promise;
+        if (mtx[1].length < 10) {
+          curP = that.lock(curP, MINLOCK);
+          prelock = true;
+        }
+
+        // Check for versions, rejects with array of out of date object ids
+        curP = that.chain(curP, function () {
+          var p = new rsvp.Promise();
+          that.checkReadset(mtx[0]).then(
+            function (fails) {
+              var failed = fails.filter(function (v) { return v !== null })
+              if (failed.length > 0) {
+                that._logger.debug('STORE', '%s: checkReadset2 failures', that.id(), failed);
+                p.reject(failed);
+              } else {
+                p.resolve();
+              }
+            }, function (err) {
+              that._logger.debug('STORE', '%s: checkReadset2 failed', that.id());
+              p.reject(err);
+            }
+          );
+          return p;
+        });
 
         /*
         // Load in nset
@@ -217,25 +212,53 @@ module shared {
           new tracker.Tracker(this, obj, id, 0);
           this._ostore.insert(id, { ref: 0, obj: obj });
         }
+        */
+
+        // If not pre-locked we need to lock and check versions again
+        if (!prelock) {
+          curP = that.lock(curP, MINLOCK)
+          curP = that.chain(curP, function () {
+            var p = new rsvp.Promise();
+            that.checkReadset(mtx[0]).then(
+              function (fails) {
+                var failed = fails.filter(function (v) { return v !== null })
+                if (failed.length > 0) {
+                  that._logger.debug('STORE', '%s: checkReadset failures', that.id(), failed);
+                  p.reject(failed);
+                } else {
+                  p.resolve();
+                }
+              }, function (err) {
+                that._logger.debug('STORE', '%s: checkReadset failed', that.id());
+                p.reject(err);
+              }
+            );
+            return p;
+          });
+        }
 
         // Write changes & inc revs
         var cset = mtx[2];
-        var wset = new utils.StringSet();
+        var wset = new utils.Map(utils.hash);
         for (var i = 0; i < cset.length; i++) {
           var e = cset[i];
 
           // Write prop
           if (e.write !== undefined) {
             // Locate target and uprev & ref if needed
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
+            if (!wset.find(e.id) !== null) {
+              var obj = this._cache.find(e.id);
+              if (obj === null)
+                this._logger.fatal('%s: cset contains unknown object', e.id);
+
+              wset.insert(e.id,obj);
+              curP = that.writeProp(curP, e.id.toString(), '_rev', obj._tracker._rev);
             }
 
             var val = serial.readValue(e.value);
+            curP = that.writeProp(curP, e.id.toString(), e.write, val);
+
+            /*
             if (val instanceof serial.Reference) {
               var trec = this._ostore.find(val.id());
               if (!utils.isObjectOrArray(trec.obj))
@@ -244,9 +267,12 @@ module shared {
             } else {
               rec.obj[e.write] = val;
             }
+            */
+
           }
 
           // Delete Prop
+          /*
           else if (e.del !== undefined) {
             var rec = this._ostore.find(e.id);
             if (rec === null)
@@ -321,14 +347,158 @@ module shared {
               args.push(undefined);
             Array.prototype.splice.apply(rec.obj, args);
           } 
+          */
           
           else {
             this._logger.fatal('%s: cset contains unexpected command', e.id);
           }
         }
-        */
 
-        return null;
+        return this.chain(curP, this.removeLock);
+      }
+
+      private checkReadset(rset: any[]) : rsvp.Promise {
+        this._logger.debug('STORE', '%s: checkReadset(%d)', this.id(), rset.length);
+        utils.dassert(rset.length !== 0);
+
+        var fails = [];
+        for (var i = 0; i < rset.length; i++) {
+          fails.push(this.revisionCheck(rset[i].id, rset[i].rev));
+        }
+        return rsvp.all(fails);
+      }
+
+      private revisionCheck(id: utils.uid, revision: number) : rsvp.Promise {
+        this._logger.debug('STORE', '%s: revisionCheck(%s,%s)', this.id(), id, revision);
+        var that = this;
+        var promise = new rsvp.Promise();
+
+        this._collection.find({ _id: new bson.ObjectId(id.toString()), _rev: revision}).count(function (err, num) {
+          if (err) {
+            promise.reject(err.message);
+          } else {
+            if (num === 1)
+              promise.resolve(null);
+            else
+              promise.resolve(id.toString());
+          }
+        });
+        return promise;
+      }
+
+      private writeProp(chainP: rsvp.Promise, id:string, prop:string, value:any) : rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+        chainP.then(function () {
+          var bid = new bson.ObjectId(id);
+          var upd = {};
+          upd[prop] = value;
+          that._collection.update({ _id: bid }, { $set: upd }, { safe: true }, function (err,count) {
+            if (err) {
+              that.fail(p, '%s: Update failed on %s[%s] %j error %s', that.id(), id, prop, value, err.message);
+            } else {
+              if (count !== 1) {
+                that.fail(p, '%s: Update failed on %s[%s] %j count %d', that.id(), id, prop, value, count);
+              } else {
+                p.resolve();
+              }
+            }
+          });
+        });
+        return p;
+      }
+
+      private lock(chainP : rsvp.Promise, timeout: number) : rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+        chainP.then(function () {
+          that._logger.debug('STORE', '%s: Trying to acquire lock', that.id());
+          var bid = new bson.ObjectId(lockUID.toString());
+          var rand = new bson.ObjectId().toString();
+          that._collection.findAndModify({ _id: bid, locked: false }, [], 
+            { _id: bid, owner: that.id().toString(), host: utils.hostInfo(), pid: process.pid, rand: rand, locked: true },
+            { safe: true, upsert: false, remove: false, new: false }, function (err, doc) {
+            if (err) {
+              that.fail(p,'%s: Unable query lock : %s', that.id(), err.message);
+            } else if (!doc) {
+
+              // Report on current state
+              if (timeout > CHECKRAND) {
+                that._collection.findOne({ _id: bid }, function (err, doc) {
+                  if (err) {
+                    that.fail(p, '%s: Unable query lock : %s', that.id(), err.message);
+                  } else {
+                    that._logger.debug('STORE', '%s: Locked by: %s', that.id(), doc.host);
+
+                    // If lock rand is changing, reset timout so we don't kill unecessarily
+                    if (doc && doc['rand'] !== undefined && that._lockRand !== doc.rand) {
+                      if (that._lockRand)
+                        that._logger.debug('STORE', '%s: Lock rand has changed, %s to %s, reseting timeout', that.id(), that._lockRand, doc.rand);
+                      that._lockRand = doc.rand;
+                      timeout = CHECKRAND;
+                    }
+
+                    // We are going to have to break this
+                    if (timeout > MAXLOCK) {
+                      that._logger.debug('STORE', '%s: Lock owner must be dead, trying to remove', that.id());
+                      that.removeLock().then(function () {
+                        that.lock(chainP, MINLOCK).then(function () {
+                          p.resolve();
+                        }, function (err) {
+                          p.reject(err);
+                        });
+                      }, function (err) {
+                        p.resolve(err);
+                      });
+                    } else {
+                      setTimeout(function () {
+                        that.lock(chainP, timeout * 2).then(function () {
+                          p.resolve();
+                        }, function (err) {
+                          p.reject(err);
+                        })
+                      }, timeout);
+                    }
+
+                  }
+                });
+              } else {
+                // < CHECK time, just try again
+                setTimeout(function () {
+                  that.lock(chainP, timeout * 2).then(function () {
+                    p.resolve();
+                  }, function (err) {
+                    p.reject(err);
+                  })
+                }, timeout);
+              }
+            } else {
+              that._logger.debug('STORE', '%s: Acquired lock', that.id());
+              p.resolve();
+            }
+          });
+        }, function (err) {
+          p.reject(err);
+        });
+        return p;
+      }
+
+      private removeLock() : rsvp.Promise {
+        var that = this;
+        var done = new rsvp.Promise();
+        
+        var bid = new bson.ObjectId(lockUID.toString());
+        that._collection.update({ _id: bid }, { _id: bid, locked: false }, 
+          { safe: true, upsert: true}, function (err, update) {
+            if (err) {
+              that.fail(done,'%s: Unable remove lock : %s', that.id(), err.message);
+            } else {
+              that._logger.debug('STORE', '%s: Released lock', that.id());
+              that._lockRand = null;
+              done.resolve();
+            } 
+        });
+        return done;
       }
 
       private refreshSet(failed: utils.uid[]): rsvp.Promise {
@@ -361,36 +531,46 @@ module shared {
               if (err) {
                 that.fail(done, '%s: Unable to open collection: %s : %s', that.id(), that._collectionName, err.message);
               } else {
-                // Find Root
-                that._logger.debug('STORE', '%s: Searching for root object', that.id());
-                collection.findOne({ _id: new bson.ObjectId(rootUID.toString()) }, function (err, doc) {
-                  if (err) {
-                    that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
-                  } else {
-                    if (doc === null) {
-                      // Add missing root
-                      that._logger.debug('STORE', '%s: Creating new root object', that.id());
-                      var fake = { _id: new bson.ObjectId(rootUID), _rev: 0, _type: 'Object'};
-                      collection.insert(fake, { safe: true }, function (err, records) {
-                        if (err) {
-                          that.fail(done, '%s: Unable to create root node in: %s : %s', that.id(), that._collectionName, err.message);
-                        } else {
-                          that._collection = collection;
-                          done.resolve(collection);
-                        }
-                      });
-                    } else {
-                      that._logger.debug('STORE', '%s: Existing root object found', that.id());
-                      that._collection = collection;
-                      done.resolve(collection);
-                    }
-                  }
+                that._collection = collection;
+                // Init collection
+                var lockP = new rsvp.Promise()
+                that.ensureExists(lockUID, {locked : false}, lockP, null);
+                lockP.then(function () {
+                  that.ensureExists(rootUID, { _rev: 0, _type: 'Object' }, done, collection);
+                }, function (err) {
+                  done.reject(err)
                 });
               }
             });
           }
         });
         return done;
+      }
+
+      private ensureExists(id: utils.uid, proto: any, done: rsvp.Promise, arg: any) {
+        var that = this;
+
+        that._logger.debug('STORE', '%s: Checking/inserting for object: %s', that.id(), id);
+        var bid = new bson.ObjectId(id.toString());
+        proto._id = bid
+        that._collection.findOne({ _id: bid }, function (err, doc) {
+          if (err) {
+            that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
+          } else if (doc === null) {
+            that._collection.insert(proto, { safe: true }, function (err, inserted) {
+              // Here err maybe be because of a race so we just log it
+              if (err) {
+                that._logger.debug('STORE', '%s: Unable to insert %s (ignoring as maybe race)', that.id(), id);
+              } else {
+                that._logger.debug('STORE', '%s: Object %s inserted', that.id(), id);
+              }
+              done.resolve(arg);
+            });
+          } else {
+            that._logger.debug('STORE', '%s: Object %s already exists', that.id(), id);
+            done.resolve(arg);
+          }
+        });
       }
 
       private getObject(id: utils.uid) : rsvp.Promise {
@@ -407,19 +587,24 @@ module shared {
               if (doc === null) {
                 that.fail(done, '%s: Object missing in store: %s : %s', that.id(), id);
               } else {
-                that._logger.debug('STORE', '%s: Loading object: %s', that.id(), id);
+                that._logger.debug('STORE', '%s: Loading object: %s:%d', that.id(), id,doc._rev);
                 // Load the new object
-                var p = that._ostore.find(id);
-                var rec = that.readObject(doc, p !== null ? p.obj : null);
+                var obj = that._cache.find(id);
+                var rec = that.readObject(doc, obj);
 
                 // Reset tracking
                 var t = tracker.getTrackerUnsafe(rec.obj);
                 if (t === null) {
                   t = new tracker.Tracker(that, rec.obj, rec.id, rec.rev);
-                  that._ostore.insert(t.id(), { ref: 0, obj: rec.obj });
+                  that._cache.insert(t.id(), rec.obj);
                 } else {
                   t.setRev(rec.rev);
                   t.retrack(rec.obj);
+                }
+
+                // Catch root update
+                if (t.id().toString() === rootUID.toString()) {
+                  that._root = rec.obj;
                 }
 
                 // Return object
@@ -505,581 +690,23 @@ module shared {
         this._logger.debug('STORE', msg);
         promise.reject(new Error(msg));
       }
-    }
 
-
-    /*
-    export class SecondaryStore implements Store extends mtx.mtxFactory {
-
-      private _router: router.Router = null;  // Message router
-      private _logger: utils.Logger;          // Default logger
-      private _pending: any[] = [];           // Outstanding work queue
-      private _ostore: utils.Map = null;      // Object lookup
-
-      constructor () {
-        super();
-        this._logger = utils.defaultLogger();
-        this._ostore = new utils.Map(utils.hash);
-        this._router = null;
-        this.start();
-        this._pending.unshift({ action: 'get', id: rootUID });
-      }
-
-      start(listen?: router.Router) {
-        if (this._router === null) {
-          if (listen !== undefined)
-            this._router = listen;
-          else
-            this._router = router.ClusterRouter.instance();
-          this._router.register(this);
-          this._logger.debug('STORE','%s: Store started (primary=false)', this.id());
-        }
-      }
-
-      stop(): void {
-        if (this._router !== null) {
-          this._router.deregister(this);
-          this._router = null;
-          this._logger.debug('STORE','%s: Store stoped (primary=true)', this.id());
-        }
-      }
-
-      atomic(handler: (root: any) => any , callback?: (error: string, arg: any) => void): void {
-        this._pending.push({ action: 'save', fn: handler, cb: callback});
-        this.nextStep();
-      }
-
-      address(): message.Address {
-        return new message.Address(this.id());
-      }
-
-      pending(): bool {
-        return this._pending.length > 0;
-      }
-
-      receive(msg: message.Message): void {
-        var ok: bool;
-        ok = this.dispatchSecondaryMsg(msg);
-        if (!ok) {
-          this._logger.fatal('%s: Message handling failed', this.id(), msg);
-        }
-      }
-
-      unknownHandler(msg: message.Message): bool {
-        // Secondary does not need to handle these, leave to primary
-        return false;
-      }
-
-      fatal(fmt: string, ...args: any[]): void {
-      }
-
-      private sendPrimaryStore(body: any) {
-        var msg = message.getMessage();
-        message.setTo(msg, message.Address.networkAddress());
-        message.setFrom(msg, this.address())
-        msg.body = body;
-        this._logger.debug('STORE', '%s: Sending to primary', this.id(), msg);
-        this._router.send(msg);
-        message.returnMessage(msg);
-      }
-
-      private nextStep(): void {
-        if (this._pending.length === 0)
-          return;
-
-        var r = this._pending[0];
-        switch (r.action) {
-          case 'get':
-            r.action = 'waitget';
-            this.sendPrimaryStore({ detail: 'get', id: r.id });
-            break;
-          case 'waitget':
-            break;
-          case 'save':
-            this.tryAtomic();
-            break;
-         case 'waitsave': 
-           // Nothing to be done until reply
-           break;
-         default:
-            this._logger.fatal('%s: Unexpected pending action: %j', this.id(), r.action);
-        }
-      }
-
-      // To worker  
-      private dispatchSecondaryMsg(msg: message.Message): bool {
-        utils.dassert(utils.isObject(msg));
-        this._logger.debug('STORE', '%s: Dispatch secondary', this.id(), msg);
-
-        switch (msg.body.detail) {
-          case 'update':
-            if (this._pending.length === 0 ||
-              this._pending[0].action !== 'waitget' ||
-              this._pending[0].id != msg.body.id) {
-              this._logger.fatal('%s: Received update out of sequence', this.id(), msg);
-            }
-
-            this.disable++;
-            var proto = this._ostore.find(msg.body.id);
-            var obj = serial.readObject(msg.body.obj, proto);
-            var t = tracker.getTrackerUnsafe(obj);
-            if (t === null) {
-              t = new tracker.Tracker(this, obj, msg.body.id, msg.body.rev);
-              this._ostore.insert(t.id(), { ref: 0, obj: obj });
-            } else {
-              t.setRev(msg.body.rev);
-              t.retrack(obj);
-            }
-
-            var e = this._pending[0];
-            if (e.assignid !== undefined) {
-              var assign = this._ostore.find(e.assignid);
-              if (assign !== null)
-                assign.obj[e.assignprop] = obj;
-            }
-            this._pending.shift();
-            this.disable--;
-
-            this.nextStep();
-            return true;
-
-          case 'ok':
-          case 'fail':
-            if (this._pending.length === 0 ||
-              this._pending[0].action !== 'waitsave') {
-              this._logger.fatal('%s: Received update out of sequence', this.id(), msg);
-            }
-            var passed: bool = msg.body.detail === 'ok';
-            if (passed) {
-              var cb = this._pending[0].cb;
-              var arg = this._pending[0].arg;
-              this._pending.shift();
-              this.okMtx(this._ostore);
-              if (utils.isValue(cb))
-                cb(null,arg);
-              this.nextStep();
-            } else {
-              this.undoMtx(this._ostore,false);
-              this.compensate(msg.body.updates);
-              this.tryAtomic();
-            }
-            return true;
-
-          default:
-            return false;
-        }
-      };
-
-      private tryAtomic() {
-        var r = this._pending[0];
-        utils.dassert(r.action === 'save' || r.action === 'waitsave');
-        try {
-          // Get root
-          var e = this._ostore.find(rootUID);
-          if (e == null) {
-            this._pending.unshift({ action: 'get', id: rootUID });
-            this.nextStep();
-            return;
-          }
-
-          // Invoke atomic block
-          var root = e.obj;
-          this.markRead(root);
-          r.arg = r.fn(root);
-
-          // Push to master (there is always something to do)
-          r.action = 'waitsave';
-          this.sendPrimaryStore({
-            detail: 'mtx', mtx: this.mtx(this._ostore)
+      private chain(chainP: rsvp.Promise, fn): rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+        chainP.then(function () {
+          fn.apply(that).then(function () {
+            p.resolve();
+          }, function (err) {
+            p.reject(err);
           });
-        } catch (e) {
-
-          this.undoMtx(this._ostore); // Force a reset
-
-          // Cache miss when trying to commit
-          if (e instanceof tracker.UnknownReference) {
-            var unk: tracker.UnknownReference = e;
-            var missing = this._ostore.find(unk.missing());
-            if (missing === null) {
-              // Request to the missing object
-              this._pending.unshift({
-                action: 'get', id: unk.missing(),
-                assignid: unk.id(), assignprop: unk.prop()
-              });
-              this.nextStep();
-            } else {
-
-              // Commit available to the prop
-              var to = this._ostore.find(unk.id());
-              this.disable++;
-              to.obj[unk.prop()] = missing.obj;
-              this.disable--;
-              this.tryAtomic();
-            }
-          } else {
-            // Something else went wrong
-            var cb = this._pending[0].cb;
-            var arg = this._pending[0].arg;
-            this._pending.shift();
-            if (utils.isValue(cb))
-              cb(e,arg);
-          }
-        }
+        }, function (err) {
+          p.reject(err);
+        });
+        return p;
       }
 
-      private compensate(updates: any[]): void {
-        this.disable++;
-        for (var i = 0; i < updates.length; i++) {
-          var id = updates[i].id;
-          var rev = updates[i].rev;
-
-          var obj = null;
-          if (utils.isValue(id) && utils.isValue(rev)) {
-            var rec = this._ostore.find(id);
-            if (rec !== null) {
-              obj = rec.obj;
-              tracker.getTracker(obj).setRev(rev);
-            }
-
-            var data = updates[i].body;
-            if (utils.isValue(data)) {
-              obj = serial.readObject(data, obj);
-              var t = tracker.getTrackerUnsafe(obj);
-              if (t === null) {
-                new tracker.Tracker(this, obj, id, rev);
-                this._ostore.insert(id, { ref: 1, obj: obj });
-              } else {
-                t.retrack(obj);
-              }
-            }
-          }
-        }
-        this.disable--;
-      }
-
-
-      /*
-    export class MongoStore implements Store extends mtx.mtxFactory {
-
-      static _primaryStore: MongoStore = null;    // Who is acting as primary
-
-      private _router: router.Router;             // Message router
-      private _logger: utils.Logger;              // Default logger
-      private _root: any;                         // Root object
-      private _ostore: utils.Map;                 // Object lookup
-
-      static primaryStore(): MongoStore {
-        return _primaryStore;
-      }
-
-      constructor () {
-        super();
-
-        
-
-        // Setup as one and only primary in cluster
-        if (cluster.isMaster) {
-          if (MongoStore._primaryStore === null) {
-            MongoStore._primaryStore = this;
-          } else {
-            utils.defaultLogger().fatal('A Primary store has already been started');
-          }
-        }
-
-        // Init
-        this._logger = utils.defaultLogger();
-        this._ostore = new utils.Map(utils.hash);
-        this._root = new Object();
-        var t = new tracker.Tracker(this, this._root, rootUID, 0);
-        this._ostore.insert(t.id(), { ref: 1, obj: this._root });
-        this._router = null;
-        this.start();
-      }
-
-      start(listen?: router.Router) {
-        if (this._router === null) {
-          if (listen !== undefined)
-            this._router = listen;
-          else
-            this._router = router.ClusterRouter.instance();
-          this._router.register(this);
-          this._logger.debug('STORE','%s: Store started (primary=true)', this.id());
-        }
-      }
-
-      stop(): void {
-        if (this._router !== null) {
-          this._router.deregister(this);
-          this._router = null;
-          this._logger.debug('STORE','%s: Store stopped (primary=true)', this.id());
-        }
-      }
-
-      atomic(handler: (root: any) => any , callback?: (error: string, arg: any) => void): void {
-        var arg = handler(this.store());
-        var ok = this.commit();
-        if (utils.isValue(callback))
-          callback(null,arg);
-      }
-
-      store(): any {
-        this.markRead(this._root);
-        return this._root;
-      }
-
-      commit(): bool {
-        this._logger.debug('STORE', '%s: Commiting local mtx to primary', this.id());
-        var nset = this.localMtx(this._ostore);
-        for (var i = 0; i < nset.length; i++) {
-          var rec = nset[i];
-          utils.dassert(this._ostore.find(rec.id) === null);
-          new tracker.Tracker(this, rec.obj, rec.id, 0);
-          this._ostore.insert(rec.id, { ref: 0, obj: rec.obj });
-        }
-        this.resetMtx();
-        return true;
-      }
-
-      undo() {
-        this.undoMtx(this._ostore, true);
-      }
-
-      private address(): message.Address {
-        return new message.Address(this.id());
-      }
-
-      private receive(msg: message.Message): void {
-        utils.dassert(utils.isObject(msg));
-        this._logger.debug('STORE', '%s: Primary received', this.id(), msg);
-
-        switch (msg.body.detail) {
-          case 'get':
-            this._logger.debug('STORE', '%s: Attempting get', this.id(), msg);
-            var rec = this._ostore.find(msg.body.id)
-            if (rec === null) {
-              this._logger.fatal('%s: No object for id: %s', this.id(), msg.body.id.toString());
-            }
-            this.replyMessage(msg, {
-              detail: 'update', id: msg.body.id, rev: rec.obj._tracker.rev(),
-              obj: serial.writeObject(this, rec.obj, '', false)
-            });
-            return;
-
-          case 'mtx':
-            this._logger.debug('STORE', '%s: Attempting commit', this.id(), msg);
-            var fails = this.processRemoteMtx(msg.body.mtx);
-            if (fails === null) {
-              this._logger.debug('STORE', '%s: Commit passed', this.id());
-              this.replyMessage(msg, { detail: 'ok' });
-            } else {
-              var update = [];
-              for (var i = 0 ; i < fails.length; i++) {
-                var t = tracker.getTracker(fails[i]);
-                update.push({ id: t.id(), rev: t.rev(), body: serial.writeObject(this, fails[i]) });
-              }
-              this._logger.debug('STORE', '%s: Commit failed', this.id());
-              this.replyMessage(msg, { detail: 'fail', updates: update });
-            }
-            return;
-
-          default:
-            this._logger.fatal('%s: Message handling failed', this.id(), msg);
-        }
-      }
-
-      private unknownHandler(msg: message.Message): bool {
-        this.receive(msg);
-        return true;
-      }
-
-      private fatal(fmt: string, ...args: any[]): void {
-      }
-
-      private replyMessage(inmsg: message.Message, body: any) {
-        var msg = message.getMessage();
-        message.replyTo(msg, inmsg);
-        message.setFrom(msg, this.address())
-        msg.body = body;
-        this._logger.debug('STORE', '%s: Replying', this.id(), msg);
-        this._router.send(msg);
-        message.returnMessage(msg);
-      }
-
-      private processRemoteMtx(mtx: any): any {
-        utils.dassert(utils.isArray(mtx) && mtx.length ===3)
-
-        // Cmp rset TODO: Full mtx sematics test needed
-        var rset = mtx[0];
-        if (rset.length === 0) {
-          this._logger.warn('Empty readset in mtx', mtx);
-          return null;
-        }
-
-        var fails = [];
-        for (var i = 0; i < rset.length; i++) {
-          var rec = this._ostore.find(rset[i].id);
-          if (rec !== null) {
-            if (tracker.getTracker(rec.obj).rev() != rset[i].rev) {
-              fails.push(rec.obj);
-              this._logger.debug('STORE', 'Revision mismatch %d vs %d for %s', 
-                tracker.getTracker(rec.obj).rev(), rset[i].rev, rset[i].id.toString());
-            }
-          } else {
-            this._logger.fatal('%s: cmp set contains unknown object', rset[i].id);
-          }
-        }
-        if (fails.length > 0) {
-          return fails;
-        }
-
-        // Load in nset
-        var nset = mtx[1];
-        for (var i = 0; i < nset.length; i++) {
-          var id = nset[i].id;
-          utils.dassert(this._ostore.find(id) === null);
-
-          var obj = serial.readObject(nset[i].value);
-          this.resolveReferences(obj);
-          new tracker.Tracker(this, obj, id, 0);
-          this._ostore.insert(id, { ref: 0, obj: obj });
-        }
-
-        // Write changes & inc revs
-        var cset = mtx[2];
-        var wset = new utils.StringSet();
-        for (var i = 0; i < cset.length; i++) {
-          var e = cset[i];
-
-          // Write prop
-          if (e.write !== undefined) {
-            // Locate target and uprev & ref if needed
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-
-            var val = serial.readValue(e.value);
-            if (val instanceof serial.Reference) {
-              var trec = this._ostore.find(val.id());
-              if (!utils.isObjectOrArray(trec.obj))
-                this._logger.fatal('%s: cset contains unknown object ref', val.id);
-              rec.obj[e.write] = trec.obj;
-            } else {
-              rec.obj[e.write] = val;
-            }
-          }
-
-          // Delete Prop
-          else if (e.del !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-            delete rec.obj[e.del];
-          }
-
-          // Re-init array
-          else if (e.reinit !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-
-            rec.obj.length = 0;
-            serial.readObject(e.reinit, rec.obj);
-          } 
-
-          // Reverse array
-          else if (e.reverse !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-
-            rec.obj.reverse();
-          } 
-
-          // Shift array
-          else if (e.shift !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-
-            rec.obj.splice(e.shift,e.size);
-          } 
-
-          // Unshift array
-          else if (e.unshift !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-
-            var args = [e.unshift,0];
-            for (var j = 0 ; j < e.size; j++)
-              args.push(undefined);
-            Array.prototype.splice.apply(rec.obj, args);
-          } 
-          
-          else {
-            this._logger.fatal('%s: cset contains unexpected command', e.id);
-          }
-        }
-
-        return null;
-      }
-
-      private gc(id: utils.uid) {
-        // TODO: ??
-      }
-
-      private resolveReferences(obj: any) {
-        utils.dassert(utils.isObjectOrArray(obj));
-
-        var keys = Object.keys(obj);
-        for (var k = 0; k < keys.length; k++) {
-          var key = keys[k];
-          if (obj[key] instanceof serial.Reference) {
-            var r: serial.Reference = obj[key];
-            var rec = this._ostore.find(r.id());
-            if (rec === null)
-              this._logger.fatal('%s: reference contains unknown object', r.id());
-            obj[key] = rec.obj;
-            rec.refs += 1;
-          }
-        }
-      }
     }
-
-    */
-
 
   } // store
 } // shared

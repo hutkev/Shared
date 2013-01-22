@@ -9,7 +9,8 @@
 module shared {
   export module store {
 
-    export var rootUID = utils.makeUID('000000000000000000000000');
+    export var lockUID = utils.makeUID('000000000000000000000000');
+    export var rootUID = utils.makeUID('000000000000000000000001');
 
     /*
      * Create a new store, this always has to be a secondary at the moment

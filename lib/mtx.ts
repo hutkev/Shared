@@ -8,6 +8,22 @@
 module shared {
   export module mtx {
 
+    export class ObjectCache {
+      private _cache: utils.Map = new utils.Map(utils.hash);   // Cached objects
+
+      public find(id: utils.uid): any {
+        return this._cache.find(id.toString());
+      }
+
+      public insert(id: utils.uid, value:any): bool {
+        return this._cache.insert(id.toString(),value);
+      }
+
+      public remove(id: utils.uid): bool {
+        return this._cache.remove(id.toString());
+      }
+    }
+
     /*
      * A mtx consist of three parts: a readset, a new set and a set of changes
      * (cset). The readset contains obj->revision mappings which much be checked
@@ -147,10 +163,10 @@ module shared {
        *
        * TODO: this whole thing is kludgy, needs better serial
        */
-      mtx(store: utils.Map) : any[] {
+      mtx(cache: ObjectCache) : any[] {
 
         // We must collect over readset to build complete picture
-        this.collect(store);
+        this.collect(cache);
 
         // Serialise the rset
         var rset = [];
@@ -190,10 +206,10 @@ module shared {
        * the oject/array states are reset so that only changes since it
        * was called are returned. 
        */
-      localMtx(store: utils.Map) : any[] {
+      localMtx(cache: ObjectCache) : any[] {
 
         // We must collect over readset to build complete picture
-        this.collect(store);
+        this.collect(cache);
 
         // We are just going to return the new object
         return this._nset.array();
@@ -216,24 +232,24 @@ module shared {
         this._nset = new utils.Queue();
       }
 
-      okMtx(store: utils.Map): void {
+      okMtx(store: ObjectCache): void {
         
         // Start tracking the nset
         var that = this;
         this._nset.apply(function (value) {
           new tracker.Tracker(that, value.obj, value.id, 0);
-          store.insert(value.id, { ref: 0, obj: value.obj });
+          store.insert(value.id, value.obj);
         });
 
         this.resetMtx();
       }
 
-      undoMtx(store: utils.Map, needCollect?: bool = true): void {
+      undoMtx(cache: ObjectCache, needCollect?: bool = true): void {
         this.disable++;
 
         // We must collect over readset to build complete picture
         if (needCollect)
-          this.collect(store);
+          this.collect(cache);
 
         // Unwind the cset actions
         var i = this._cset.size() - 1;
@@ -256,7 +272,7 @@ module shared {
               } else {
                 // Conservatively kill everything else
                 t.kill();
-                store.remove(t.id());
+                cache.remove(t.id());
               }
             }
           }
@@ -328,13 +344,13 @@ module shared {
       /*
        * Run post-processing over all object that have been read.
        */
-      private collect(store: utils.Map) : void {
+      private collect(cache: ObjectCache) : void {
         // Collect over the readset
         var that = this;
         this._rset.apply(function (key, value) {
-          var rec = store.find(key);
-          utils.dassert(rec != null);
-          that.collectObject(rec.obj);
+          var obj = cache.find(key);
+          utils.dassert(obj != null);
+          that.collectObject(obj);
           return true;
         });
       };

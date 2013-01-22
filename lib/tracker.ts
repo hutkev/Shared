@@ -228,8 +228,9 @@ module shared {
        * Set object rev to a value, must be >= to existing rev
        */
       setRev(to: number) : number {
-        if (to >= this._rev)
+        if (to >= this._rev) {
           this._rev = to;
+        }
         return this._rev;
       };
 

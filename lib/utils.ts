@@ -9,6 +9,7 @@ module shared {
   export module utils {
 
     var _ = require('underscore');
+    var os = require('os');
 
     /* 
      * String hash, see http://www.cse.yorku.ca/~oz/hash.html
@@ -120,6 +121,25 @@ module shared {
         return -1 * Math.floor(-v);
       else
         return Math.floor(v);
+    }
+
+    var _hostInfo = null;
+
+    export function hostInfo(): string {
+      if (_hostInfo === null) {
+        _hostInfo = os.hostname();
+        var ifaces = os.networkInterfaces();
+        for (var dev in ifaces) {
+          var alias = 0;
+          ifaces[dev].forEach(function (details) {
+            if (details.family === 'IPv4' && details.address !== '127.0.0.1') {
+              _hostInfo += ' [' + details.address + ']';
+              ++alias;
+            }
+          });
+        }
+      }
+      return _hostInfo;
     }
 
   } // module utils
