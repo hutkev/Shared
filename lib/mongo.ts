@@ -132,7 +132,7 @@ module shared {
               if (utils.isArray(err)) {
                 if (err.length !== 0) {
                   that._logger.debug('STORE', 'Objects need refresh after commit failure');
-                  that.undoMtx(this._cache,false); 
+                  that.undo(false);
                   that.refreshSet(err).then(function () {
                     that._logger.debug('STORE', 'Starting re-try');
                     done.reject(null);  // A retry request
@@ -151,7 +151,7 @@ module shared {
           that._logger.debug('STORE', 'Exception during try: ', utils.exceptionInfo(e));
 
           // Reset any changes
-          that.undoMtx(this._cache); 
+          that.undo(true); 
 
           // Cache miss when trying to commit
           if (e instanceof tracker.UnknownReference) {
@@ -223,30 +223,9 @@ module shared {
 
         // Load in nset
         var nset = mtx[1];
-        console.log(nset);
         for (var i = 0; i < nset.length; i++) {
-          var id = nset[i].id;
-          utils.dassert(this._cache.find(id) === null);
-
-          var obj = nset[i].value;
-
-          /*
-          this.resolveReferences(obj);
-
-        var keys = Object.keys(obj);
-        for (var k = 0; k < keys.length; k++) {
-          var key = keys[k];
-          if (obj[key] instanceof serial.Reference) {
-            var r: serial.Reference = obj[key];
-            var rec = this._ostore.find(r.id());
-            if (rec === null)
-              this._logger.fatal('%s: reference contains unknown object', r.id());
-            obj[key] = rec.obj;
-            rec.refs += 1;
-          }
-        }*/
-          console.log(id);
-          curP = that.writeObject(curP, id, obj);
+          utils.dassert(this._cache.find(nset[i].id) === null);
+          curP = that.writeObject(curP, nset[i].id, nset[i].value);
         }
 
         // If not pre-locked we need to lock and check versions again
@@ -278,35 +257,27 @@ module shared {
         for (var i = 0; i < cset.length; i++) {
           var e = cset[i];
 
+          // If we have not already; update the targets revision
+          if (!wset.find(e.id) !== null) {
+            var obj = this._cache.find(e.id);
+            utils.dassert(obj !== null);
+            wset.insert(e.id,obj);
+            curP = that.writeProp(curP, e.id.toString(), '_rev', obj._tracker._rev);
+          }
+
           // Write prop
           if (e.write !== undefined) {
-
-            // If we have not already; update the targets revision
-            if (!wset.find(e.id) !== null) {
-              var obj = this._cache.find(e.id);
-              utils.dassert(obj !== null);
-              wset.insert(e.id,obj);
-              curP = that.writeProp(curP, e.id.toString(), '_rev', obj._tracker._rev);
-            }
-
-            // Write to DB
+            // TODO: Do we need to de-serial?
             var val = serial.readValue(e.value);
             curP = that.writeProp(curP, e.id.toString(), e.write, val);
           }
 
           // Delete Prop
-          /*
           else if (e.del !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-            delete rec.obj[e.del];
+            curP = that.deleteProp(curP, e.id.toString(), e.del);
           }
 
+            /*
           // Re-init array
           else if (e.reinit !== undefined) {
             var rec = this._ostore.find(e.id);
@@ -380,6 +351,18 @@ module shared {
         return this.chain(curP, this.removeLock);
       }
 
+      private undo(needCollect: bool) {
+
+        // Undo current transaction
+        this.undoMtx(this._cache, needCollect); 
+
+        // Did the root die?
+        var t = tracker.getTracker(this._root);
+        if (t.isDead()) {
+          this._root = null;
+        }
+      }
+
       private checkReadset(rset: any[]) : rsvp.Promise {
         this._logger.debug('STORE', '%s: checkReadset(%d)', this.id(), rset.length);
         utils.dassert(rset.length !== 0);
@@ -434,6 +417,30 @@ module shared {
         return p;
       }
 
+      private deleteProp(chainP: rsvp.Promise, id:string, prop:string) : rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+
+        chainP.then(function () {
+          var bid = new bson.ObjectId(id);
+          var upd = {};
+          upd[prop] = '';
+          that._logger.debug('STORE', '%s: Deleting property: %s[%s]', that.id(), id, prop);
+          that._collection.update({ _id: bid }, { $unset: upd }, { safe: true }, function (err,count) {
+            if (err) {
+              that.fail(p, '%s: Deleting failed on %s[%s] error %s', that.id(), id, prop, err.message);
+            } else {
+              if (count !== 1) {
+                that.fail(p, '%s: Deleting failed on %s[%s] count %d', that.id(), id, prop, count);
+              } else {
+                p.resolve();
+              }
+            }
+          });
+        });
+        return p;
+      }
+
       private writeObject(chainP: rsvp.Promise, oid:string, obj:any) : rsvp.Promise {
         utils.dassert(utils.isValue(oid) && utils.isValue(obj));
         var that = this;
@@ -441,8 +448,6 @@ module shared {
         var p = new rsvp.Promise();
         chainP.then(function () {
           var bid = new bson.ObjectId(oid);
-          console.log(oid);
-          console.log(bid);
 
           // Prep a copy for upload
           var fake = utils.cloneObject(obj);
