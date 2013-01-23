@@ -24,11 +24,12 @@ module shared {
     export class MongoStore implements Store extends mtx.mtxFactory {
       private _logger: utils.Logger = utils.defaultLogger();  
 
-      private _dbName: string;                                  // Configuration
+      private _host: string;                                   // Configuration
+      private _port: number;
+      private _dbName: string;                                  
       private _collectionName: string;
 
-      private _mongo: mongodb.Server;                           // Database stuff
-      private _db: mongodb.Db;
+      private _db: mongodb.Db;                                  // Database stuff
       private _collection: mongodb.Collection = null;
       
       private _pending: any[] = [];                             // Outstanding work queue
@@ -40,13 +41,20 @@ module shared {
 
       constructor (host?: string = 'localhost', port?: number = 27017, db?: string = 'shared', collection?: string = 'shared') {
         super();
+        this._host = host;
+        this._port = port;
         this._dbName = db;
         this._collectionName = collection;
 
-        this._mongo = new mongo.Server(host, port);
-        this._db = new mongo.Db(db, this._mongo, { w: 1 });
-
         this._logger.debug('STORE', '%s: Store created', this.id());
+      }
+
+      close() : void {
+        // Queue close, 
+        this._pending.push({ close: true });
+
+        // Process queue
+        this.processPending();
       }
 
       atomic(handler: (store: any) => any, callback?: (error: string, arg: any) => void ): void {
@@ -59,39 +67,52 @@ module shared {
       }
 
       private processPending(recurse: bool = false) {
-        // Processing is chained, so only start if only 1 to do
-        if ((recurse && this._pending.length > 0) ||
-          (!recurse && this._pending.length === 1)) {
+        var that = this;
 
-          var that = this;
-          var pending = this._pending[0];
-          that.getRoot().then(function (root) {
-            that.tryHandler(pending.handler).then(function (ret) {
-              // Completed
-              if (utils.isValue(pending.callback)) {
-                pending.callback(null, ret);
-              }
-              that._pending.shift();
-              that.processPending(true);
-            }, function (err) {
-              if (err) {
-                // Some error during processing
-                if (utils.isValue(pending.callback))
-                  pending.callback(err, null);
+        // Processing is chained, so only start if only 1 to do
+        if ((recurse && that._pending.length > 0) ||
+          (!recurse && that._pending.length === 1)) {
+          
+          var pending = that._pending[0];
+          if (pending.close) {
+            // Close the db
+            if (that._db) {
+              that._db.close();
+              that._collection = null;
+              that._db = null;
+              that._logger.debug('STORE', '%s: Database has been closed', that.id());
+            }
+            that._pending.shift();
+          } else {
+            // An Update
+            that.getRoot().then(function (root) {
+              that.tryHandler(pending.handler).then(function (ret) {
+                // Completed
+                if (utils.isValue(pending.callback)) {
+                  pending.callback(null, ret);
+                }
                 that._pending.shift();
                 that.processPending(true);
-              } else {
-                // Needs re-try
-                that.processPending(true);
-              }
+              }, function (err) {
+                if (err) {
+                  // Some error during processing
+                  if (utils.isValue(pending.callback))
+                    pending.callback(err, null);
+                  that._pending.shift();
+                  that.processPending(true);
+                } else {
+                  // Needs re-try
+                  that.processPending(true);
+                }
+              });
+            }, function (err) {
+              // No root object
+              if (utils.isValue(pending.callback))
+                pending.callback(err, null);
+              that._pending.shift();
+              that.processPending(true);
             });
-          }, function (err) {
-            // No root object
-            if (utils.isValue(pending.callback))
-              pending.callback(err, null);
-            that._pending.shift();
-            that.processPending(true);
-          });
+          }
         }
       }
 
@@ -202,6 +223,7 @@ module shared {
 
         // Load in nset
         var nset = mtx[1];
+        console.log(nset);
         for (var i = 0; i < nset.length; i++) {
           var id = nset[i].id;
           utils.dassert(this._cache.find(id) === null);
@@ -223,8 +245,8 @@ module shared {
             rec.refs += 1;
           }
         }*/
-
-          curP = that.writeObject(curP, id.toString(), obj);
+          console.log(id);
+          curP = that.writeObject(curP, id, obj);
         }
 
         // If not pre-locked we need to lock and check versions again
@@ -258,30 +280,18 @@ module shared {
 
           // Write prop
           if (e.write !== undefined) {
-            // Locate target and uprev & ref if needed
+
+            // If we have not already; update the targets revision
             if (!wset.find(e.id) !== null) {
               var obj = this._cache.find(e.id);
-              if (obj === null)
-                this._logger.fatal('%s: cset contains unknown object', e.id);
-
+              utils.dassert(obj !== null);
               wset.insert(e.id,obj);
               curP = that.writeProp(curP, e.id.toString(), '_rev', obj._tracker._rev);
             }
 
+            // Write to DB
             var val = serial.readValue(e.value);
             curP = that.writeProp(curP, e.id.toString(), e.write, val);
-
-            /*
-            if (val instanceof serial.Reference) {
-              var trec = this._ostore.find(val.id());
-              if (!utils.isObjectOrArray(trec.obj))
-                this._logger.fatal('%s: cset contains unknown object ref', val.id);
-              rec.obj[e.write] = trec.obj;
-            } else {
-              rec.obj[e.write] = val;
-            }
-            */
-
           }
 
           // Delete Prop
@@ -408,6 +418,7 @@ module shared {
           if (value instanceof serial.Reference)
             value = { _id: value.id() };
           upd[prop] = value;
+          that._logger.debug('STORE', '%s: Updating property: %s[%s] %j', that.id(), id, prop, value);
           that._collection.update({ _id: bid }, { $set: upd }, { safe: true }, function (err,count) {
             if (err) {
               that.fail(p, '%s: Update failed on %s[%s] %j error %s', that.id(), id, prop, value, err.message);
@@ -423,17 +434,32 @@ module shared {
         return p;
       }
 
-      private writeObject(chainP: rsvp.Promise, id:string, obj:any) : rsvp.Promise {
+      private writeObject(chainP: rsvp.Promise, oid:string, obj:any) : rsvp.Promise {
+        utils.dassert(utils.isValue(oid) && utils.isValue(obj));
         var that = this;
+
         var p = new rsvp.Promise();
         chainP.then(function () {
-          var bid = new bson.ObjectId(id);
-          // Populate in case of insert
-          obj._id = bid;  
-          obj._rev = 0;
-          obj._type = utils.isObject(obj)?'Object':'Array';
+          var bid = new bson.ObjectId(oid);
+          console.log(oid);
+          console.log(bid);
 
-          that._collection.update({ _id: bid }, obj, { safe: true, upsert: true }, function (err,count) {
+          // Prep a copy for upload
+          var fake = utils.cloneObject(obj);
+          var keys = Object.keys(fake);
+          for (var k = 0; k < keys.length; k++) {
+            if (utils.isObjectOrArray(obj[keys[k]])) {
+              var id = that.valueId(obj[keys[k]]);
+              fake[keys[k]] = { _id: id.toString() };
+            }
+          }
+          fake._id = bid;  
+          fake._rev = 0;
+          fake._type = utils.isObject(obj)?'Object':'Array';
+
+          // Upload the fake
+          that._logger.debug('STORE', '%s: Updating object: %s %j', that.id(), id, obj);
+          that._collection.update({ _id: bid }, fake, { safe: true, upsert: true }, function (err,count) {
             delete obj._id;
             delete obj._rev;
             delete obj._type;
@@ -450,7 +476,6 @@ module shared {
         });
         return p;
       }
-
 
       private lock(chainP : rsvp.Promise, timeout: number) : rsvp.Promise {
         var that = this;
@@ -565,6 +590,7 @@ module shared {
 
         // Open DB
         that._logger.debug('STORE', '%s: Connecting to database - %s', that.id(), that._dbName);
+        that._db = new mongo.Db(that._dbName, new mongo.Server(that._host, that._port), { w: 1 });
         that._db.open(function (err, db) {
           if (err) {
             that.fail(done, '%s: Unable to open db: %s : %s', that.id(), that._dbName, err.message);

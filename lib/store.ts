@@ -21,6 +21,7 @@ module shared {
     }
 
     export interface Store  {
+      close(): void;
 
       atomic(handler: (store: any) => any , callback?: (error: string, arg: any) => void ): void;
 
