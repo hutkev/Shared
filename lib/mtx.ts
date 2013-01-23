@@ -163,7 +163,7 @@ module shared {
        *
        * TODO: this whole thing is kludgy, needs better serial
        */
-      mtx(cache: ObjectCache) : any[] {
+      mtx(cache: ObjectCache, serialise: bool = true) : any[] {
 
         // We must collect over readset to build complete picture
         this.collect(cache);
@@ -179,7 +179,10 @@ module shared {
         var nset = [];
         var that = this;
         this._nset.apply(function (value) {
-          nset.push({ id: value.id, value: serial.writeObject(that, value.obj) });
+          if (serialise)
+            nset.push({ id: value.id, value: serial.writeObject(that, value.obj) });
+          else
+            nset.push({ id: value.id, value: value.obj});
         });
 
         // Serialize cset

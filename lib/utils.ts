@@ -123,6 +123,39 @@ module shared {
         return Math.floor(v);
     }
 
+    export function dateFormat(type: string, fmt: string, args: any[]): string {
+      return new Date().toISOString() + ' ' + format(type, fmt, args);
+    }
+
+    export function format(type: string, fmt: string, args: any[]) : string {
+      var m = '';
+      if (type!==null && type.length>0)
+        m += (type + ' ');
+      var i = 0;
+      var len = args.length;
+      var str = m + String(fmt).replace(/%[sdj%]/g, function (x) {
+        if (x === '%%') return '%';
+        if (i >= len) return x;
+        switch (x) {
+          case '%s': return String(args[i++]);
+          case '%d': return Number(args[i++]).toString();
+          case '%j': return JSON.stringify(args[i++]);
+          default:
+            return x;
+        }
+      });
+      str += '\n';
+
+      for (var x = args[i]; i < len; x = args[++i]) {
+        if (x === null || typeof x !== 'object') {
+          str += ' ' + x + '\n';
+        } else {
+          str += ' ' + JSON.stringify(x,null,' ') + '\n';
+        }
+      }
+      return str;
+    }
+
     var _hostInfo = null;
 
     export function hostInfo(): string {
@@ -140,6 +173,14 @@ module shared {
         }
       }
       return _hostInfo;
+    }
+
+    export function exceptionInfo(e: any) {
+      if (e instanceof Error) {
+        return e.stack;
+      } else {
+        return JSON.stringify(e);
+      }
     }
 
   } // module utils

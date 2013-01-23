@@ -1,4 +1,6 @@
 var cluster = require('cluster');
+var shared = require('../lib/shared.js');
+shared.debug.log('STORE');
 var store = require('../lib/shared.js').createStore();
 
 if (cluster.isMaster) {
@@ -8,29 +10,33 @@ if (cluster.isMaster) {
   console.log('Creating counter(s) of size %s for %s worker(s) to decrement', count, workers);
   store.atomic(function (db) { 
     for (var w =0 ; w<workers; w++) {
-      db['worker'+w] = { counter : count/workers };
+      if (db['worker'+w] === undefined)
+        db['worker'+w] = { counter : count };
+      else
+        db['worker'+w].counter = count;
+    }
+  }, function(err) {
+    console.log('Forking workers...');
+    var running = 0;
+    for (var w = 0 ; w < workers; w++) {
+      cluster.fork();
+      running++;
     }
   });
 
-  console.log('Forking workers...');
-  var running = 0;
-  for (var w = 0 ; w < workers; w++) {
-    cluster.fork();
-    running++;
-  }
 
   console.log('Waiting for death...');
   cluster.on('exit', function (worker, code, signal) {
     console.log('worker ' + worker.process.pid + ' died');
     running--;
     if (running === 0) {
-      for (var w = 0 ; w < workers; w++) {
-        store.atomic(function (db) {
-          return db['worker' + w].counter;
-        }, function (err, count) {
-          console.log('Worker %s has counted down to %s', w, count);
-        });
-      }
+      store.atomic(function (db) {
+        for (var w = 0 ; w < workers; w++) 
+          console.log('Worker %s has counted down to %s', w, db['worker'+w].counter);
+      }, function (err, count) {
+        if (err)
+          console.log('Error: ' + err);
+      });
     }
   });
 
@@ -47,7 +53,7 @@ if (cluster.isMaster) {
       if (!err && more) {
         process.nextTick(decOne);
       } else {
-        process.exit();
+        console.log(worker +' all done');
       }
    });
   };

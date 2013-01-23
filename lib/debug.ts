@@ -125,55 +125,26 @@ module shared {
       public trace(fmt: string, ...msgs: any[]): void {
         var e = new Error;
         e.name = 'Trace';
-        e.message = this.format('', fmt, msgs);
+        e.message = dateFormat(this._prefix, fmt, msgs);
         Error.captureStackTrace(e, arguments.callee);
         this.write(e.stack+'\n');
-      }
-
-      public format(type: string, fmt: string, args: any[]) : string {
-        var m = new Date().toISOString() + ' ' + this._prefix + ' '
-        if (type.length)
-          m += (type + ' ');
-        var i = 0;
-        var len = args.length;
-        var str = m + String(fmt).replace(/%[sdj%]/g, function (x) {
-          if (x === '%%') return '%';
-          if (i >= len) return x;
-          switch (x) {
-            case '%s': return String(args[i++]);
-            case '%d': return Number(args[i++]).toString();
-            case '%j': return JSON.stringify(args[i++]);
-            default:
-              return x;
-          }
-        });
-        str += '\n';
-
-        for (var x = args[i]; i < len; x = args[++i]) {
-          if (x === null || typeof x !== 'object') {
-            str += ' ' + x + '\n';
-          } else {
-            str += ' ' + JSON.stringify(x,null,' ') + '\n';
-          }
-        }
-        return str;
       }
 
       private log(type: number, fmt: string, msgs: any[]): void {
         switch (type) {
           case LogLevel.INFO:
             if (this.logLevel() <= LogLevel.INFO) {
-              this._to.write(this.format('INFO',fmt,msgs));
+              this._to.write(dateFormat(this._prefix+ ' INFO',fmt,msgs));
             }
             break;
           case LogLevel.WARN:
             if (this.logLevel() <= LogLevel.WARN) {
-              this._to.write(this.format('WARNING', fmt, msgs));
+              this._to.write(dateFormat(this._prefix+ ' WARNING', fmt, msgs));
             }
             break;
           case LogLevel.FATAL:
             if (this.logLevel() <= LogLevel.FATAL) {
-              var err = this.format('FATAL', fmt, msgs);
+              var err = dateFormat(this._prefix+ ' FATAL', fmt, msgs);
               this._to.write(err);
               if (!isValue(this._next))
                 throw new Error('Fatal error: ' + err);

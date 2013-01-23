@@ -102,7 +102,7 @@ module shared {
           var ret = handler(that._root)
           try {
             that._logger.debug('STORE', '%s: Attempting commit',that.id());
-            that.commitMtx(that.mtx(that._cache)).then(function () {
+            that.commitMtx(that.mtx(that._cache,false)).then(function () {
               // It's passed :-)
               that._logger.debug('STORE', '%s: Update completed successfully',that.id());
               that.okMtx(that._cache);
@@ -124,10 +124,10 @@ module shared {
               }
             });
           } catch (e) {
-            that._logger.fatal('Unhandled exception', e.stack);
+            that._logger.fatal('Unhandled exception', utils.exceptionInfo(e));
           }
         } catch (e) {
-          that._logger.debug('STORE', 'Exception during try: ',e.stack);
+          that._logger.debug('STORE', 'Exception during try: ', utils.exceptionInfo(e));
 
           // Reset any changes
           that.undoMtx(this._cache); 
@@ -142,7 +142,7 @@ module shared {
                   var assign:any = that._cache.find(unk.id());
                   if (assign !== null) {
                     that.disable++;
-                    assign.obj[unk.prop()] = obj;
+                    assign[unk.prop()] = obj;
                     that.disable--;
                   }
                 }
@@ -200,19 +200,32 @@ module shared {
           return p;
         });
 
-        /*
         // Load in nset
         var nset = mtx[1];
         for (var i = 0; i < nset.length; i++) {
           var id = nset[i].id;
-          utils.dassert(this._ostore.find(id) === null);
+          utils.dassert(this._cache.find(id) === null);
 
-          var obj = serial.readObject(nset[i].value);
+          var obj = nset[i].value;
+
+          /*
           this.resolveReferences(obj);
-          new tracker.Tracker(this, obj, id, 0);
-          this._ostore.insert(id, { ref: 0, obj: obj });
+
+        var keys = Object.keys(obj);
+        for (var k = 0; k < keys.length; k++) {
+          var key = keys[k];
+          if (obj[key] instanceof serial.Reference) {
+            var r: serial.Reference = obj[key];
+            var rec = this._ostore.find(r.id());
+            if (rec === null)
+              this._logger.fatal('%s: reference contains unknown object', r.id());
+            obj[key] = rec.obj;
+            rec.refs += 1;
+          }
+        }*/
+
+          curP = that.writeObject(curP, id.toString(), obj);
         }
-        */
 
         // If not pre-locked we need to lock and check versions again
         if (!prelock) {
@@ -392,6 +405,8 @@ module shared {
         chainP.then(function () {
           var bid = new bson.ObjectId(id);
           var upd = {};
+          if (value instanceof serial.Reference)
+            value = { _id: value.id() };
           upd[prop] = value;
           that._collection.update({ _id: bid }, { $set: upd }, { safe: true }, function (err,count) {
             if (err) {
@@ -407,6 +422,35 @@ module shared {
         });
         return p;
       }
+
+      private writeObject(chainP: rsvp.Promise, id:string, obj:any) : rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+        chainP.then(function () {
+          var bid = new bson.ObjectId(id);
+          // Populate in case of insert
+          obj._id = bid;  
+          obj._rev = 0;
+          obj._type = utils.isObject(obj)?'Object':'Array';
+
+          that._collection.update({ _id: bid }, obj, { safe: true, upsert: true }, function (err,count) {
+            delete obj._id;
+            delete obj._rev;
+            delete obj._type;
+            if (err) {
+              that.fail(p, '%s: Update failed on new object %s=%j error %s', that.id(), id, obj, err.message);
+            } else {
+              if (count !== 1) {
+                that.fail(p, '%s: Update failed on new object %s=%j count %d', that.id(), id, obj, count);
+              } else {
+                p.resolve();
+              }
+            }
+          });
+        });
+        return p;
+      }
+
 
       private lock(chainP : rsvp.Promise, timeout: number) : rsvp.Promise {
         var that = this;
@@ -677,8 +721,17 @@ module shared {
               pk = -1;
             }
 
+            // Check for a Reference
+            var val = doc[dkeys[dk]];
+            if (utils.isObject(val)) {
+              var vkeys = Object.keys(val);
+              if (vkeys.length === 1 && vkeys[0] === '_id') {
+                val = new serial.Reference(val._id);
+              }
+            }
+
             // Update proto value
-            proto[prop] = doc[dkeys[dk]];
+            proto[prop] = val;
           }
           dk++;
         }
@@ -686,7 +739,7 @@ module shared {
       }
 
       private fail(promise, fmt: string, ...msgs: any[]) {
-        var msg=this._logger.format('', fmt, msgs);
+        var msg=utils.format('', fmt, msgs);
         this._logger.debug('STORE', msg);
         promise.reject(new Error(msg));
       }
