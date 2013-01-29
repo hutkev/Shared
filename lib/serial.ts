@@ -17,6 +17,7 @@ module shared {
       private _id: utils.uid;
 
       constructor (id: utils.uid) {
+        utils.dassert(utils.isUID(id));
         this._id = id;
       }
 
@@ -277,12 +278,11 @@ module shared {
         }
 
         // Reference?
-        if (this._from.charAt(this._at) === '<' && this._from.charAt(this._at+25) === '>') {
-          var id = this._from.substr(this._at+1, 24);
-          if (utils.isUID(id)) {
-            this._at += 26;
-            return new Reference(id);
-          }
+        if (this._from.charAt(this._at) === '<' && 
+          this._from.charAt(this._at+1+utils.uidStringLength) === '>') {
+          var id = this._from.substr(this._at+1, utils.uidStringLength);
+          this._at += (2+utils.uidStringLength);
+          return new Reference(utils.makeUID(id));
         } 
         
         // Maybe a number

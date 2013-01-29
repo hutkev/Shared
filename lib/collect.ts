@@ -79,6 +79,16 @@ module shared {
         return true;
       }
 
+      findOrInsert(key: any, proto? = {}): any {
+        var val = this.find(key);
+        if (val !== null) {
+          return val;
+        } else {
+          this.insert(key, proto);
+          return proto;
+        }
+      }
+
       remove(key: any) : bool {
         dassert(isValue(key));
 
@@ -104,7 +114,7 @@ module shared {
           var row: MapRow = it.data();
           for (var i = 0; i < row.values.length; i++) {
             if (row.values[i].key !== null)
-              if (!handler(row.values[i].key,row.values[i].value))
+              if (handler(row.values[i].key,row.values[i].value) === false)
                 return false;
           }
         }
@@ -246,7 +256,6 @@ module shared {
           func(this._elems[i]);
         }
       }
-
     }
 
 

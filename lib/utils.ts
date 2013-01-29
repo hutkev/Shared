@@ -148,9 +148,9 @@ module shared {
 
       for (var x = args[i]; i < len; x = args[++i]) {
         if (x === null || typeof x !== 'object') {
-          str += ' ' + x + '\n';
+          str += x + '\n';
         } else {
-          str += ' ' + JSON.stringify(x,null,' ') + '\n';
+          str += JSON.stringify(x,null,' ') + '\n';
         }
       }
       return str;

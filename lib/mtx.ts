@@ -8,528 +8,274 @@
 module shared {
   export module mtx {
 
-    export class ObjectCache {
-      private _cache: utils.Map = new utils.Map(utils.hash);   // Cached objects
+    export class ReadMap {
+      private _map: utils.IdMap = new utils.IdMap();
 
-      public find(id: utils.uid): any {
-        return this._cache.find(id.toString());
+      size(): number {
+        return this._map.size();
       }
 
-      public insert(id: utils.uid, value:any): bool {
-        return this._cache.insert(id.toString(),value);
+      find(id: utils.uid) : any {
+        return this._map.find(id);
       }
 
-      public remove(id: utils.uid): bool {
-        return this._cache.remove(id.toString());
+      insert(id: utils.uid, revision: number) : bool {
+        return this._map.insert(id, revision);
+      }
+
+      remove(id: utils.uid) : bool {
+        return this._map.remove(id);
+      }
+
+      apply(handler: (key: utils.uid, value: number) => bool): bool {
+        return this._map.apply(function (k, v) {
+          return handler(k, v);
+        });
+      }
+
+      removeAll() : void {
+        this._map.removeAll();
+      }
+
+      toString(): string {
+        var str = '';
+        this._map.apply(function (key, value) {
+          str += key;
+          str += ' '
+          str += value;
+          str += '\n';
+        });
+        return str;
       }
     }
 
-    /*
-     * A mtx consist of three parts: a readset, a new set and a set of changes
-     * (cset). The readset contains obj->revision mappings which much be checked
-     * prior to detect conflict. There must be at least one entry in the readset
-     * and entries may not reference objects in the newset. The newset contains 
-     * id->object mappings of new objects being introduced. The newset must be 
-     * ordered to avoid non-existent references to other new objects.The change set 
-     * contains a list of object change instructions, these may reference any
-     * objects in the newset.
-     *
-     * The in-memory & on-the-wire format of a mtx differ in how objects are 
-     * referenced (by id or directly). This can help improve local mtx commit 
-     * performance but can be confusing.
-     *
-     * See TrackCache for more details.
-     */
-    export class mtxFactory implements tracker.TrackCache extends utils.UniqueObject {
+    export interface NewItem {
+      id: utils.uid;
+      obj: any;
+    }
 
-      public disable: number = 0;
+    export class NewQueue {
+      private _queue: utils.Queue;
 
-      private _rset : utils.Map;   // read set, id->rev map
-      private _nset : utils.Queue; // new (id,obj) ordered, discovered during serial
-      private _cset : utils.Queue; // change set, ordered list of changes
+      constructor (queue?: utils.Queue = new utils.Queue()) {
+        this._queue = queue;
+      }
+
+      size(): number {
+        return this._queue.size();
+      }
+
+      empty(): bool {
+        return this._queue.empty();
+      }
+
+      front(): NewItem {
+        return this._queue.front();
+      }
+
+      back(): NewItem {
+        return this._queue.back();
+      }
+
+      at(i: number) : NewItem {
+        return this._queue.at(i);
+      }
+
+      setAt(i: number, value: NewItem) : void {
+        this._queue.setAt(i, value);
+      }
+
+      push(value: NewItem) : void {
+        this._queue.push(value);
+      }
+
+      pop() : NewItem {
+        return this._queue.pop();
+      }
+
+      unshift(value: NewItem) : void {
+        this._queue.unshift(value);
+      }
+
+      shift() : NewItem {
+        return this._queue.shift();
+      }
+
+      array(): NewItem[] {
+        return this._queue.array();
+      }
+
+      first( match: (value:NewItem) => bool): NewItem {
+        return this._queue.first(function (v) {
+          return match(v);
+        });
+      }
+
+      filter( match: (value:NewItem) => bool): NewQueue {
+        var q = this._queue.filter(function (v) {
+          return match(v);
+        });
+        return new NewQueue(q);
+      }
+
+      apply( func: (value:NewItem) => void): void {
+        this._queue.apply(function (v) {
+          return func(v);
+        });
+      }
+
+      toString(): string {
+        var str = '';
+        this._queue.apply(function (item:NewItem) {
+          str += item.id;
+          str += ' '
+          str += JSON.stringify(item.obj);
+          str += '\n';
+        });
+        return str;
+      }
+    }
+
+    export interface ChangeItem {
+      obj: any;
+      lasttx: number;
+
+      write?: string;
+      value?: any;
+      last?: any;
+
+      del?: string;
+
+      sort?: bool;
+      reinit?: any;
+      reverse?: bool;
+
+      shift?: number;
+      unshift?: number;
+      size?: number;
+    }
+
+    export class ChangeQueue {
+      private _queue: utils.Queue;
+
+      constructor (queue?: utils.Queue = new utils.Queue()) {
+        this._queue = queue;
+      }
+
+      size(): number {
+        return this._queue.size();
+      }
+
+      empty(): bool {
+        return this._queue.empty();
+      }
+
+      front(): ChangeItem {
+        return this._queue.front();
+      }
+
+      back(): ChangeItem {
+        return this._queue.back();
+      }
+
+      at(i: number) : ChangeItem {
+        return this._queue.at(i);
+      }
+
+      setAt(i: number, value: ChangeItem) : void {
+        this._queue.setAt(i, value);
+      }
+
+      push(value: ChangeItem) : void {
+        this._queue.push(value);
+      }
+
+      pop() : ChangeItem {
+        return this._queue.pop();
+      }
+
+      unshift(value: ChangeItem) : void {
+        this._queue.unshift(value);
+      }
+
+      shift() : ChangeItem {
+        return this._queue.shift();
+      }
+
+      array(): ChangeItem[] {
+        return this._queue.array();
+      }
+
+      first( match: (value:ChangeItem) => bool): ChangeItem {
+        return this._queue.first(function (v) {
+          return match(v);
+        });
+      }
+
+      filter( match: (value:ChangeItem) => bool): ChangeQueue {
+        var q = this._queue.filter(function (v) {
+          return match(v);
+        });
+        return new ChangeQueue(q);
+      }
+
+      apply( func: (value:ChangeItem) => void): void {
+        this._queue.apply(function (v) {
+          return func(v);
+        });
+      }
+
+      toString(): string {
+        var str = '';
+        this._queue.apply(function (item:ChangeItem) {
+          str += tracker.getTracker(item.obj).id();
+          str += ' '
+          if (item.write) {
+            str += 'write ' + item.write + ' = ' + item.value;
+            if (item.last)
+              str += ' last ' + item.last;
+          } else if (item.del) {
+            str += 'delete ' + item.del;
+          } else if (item.reinit) {
+            str += 'reinit ' + item.reinit;
+          } else if (item.reverse) {
+            str += 'reverse';
+          } else if (item.shift) {
+            str += 'shift ' + item.shift + ' by ' + item.size;
+          } else if (item.unshift) {
+            str += 'unshift ' + item.unshift + ' by ' + item.size;
+          } else {
+            str += '**UNKNOWN** ' + JSON.stringify(item);
+          }
+          str += '\n';
+        });
+        return str;
+      }
+
+    }
+
+    export class MTX {
+
+      public rset: ReadMap;     // read set, id->rev map
+      public nset: NewQueue;    // new (id,obj) ordered, discovered during serial
+      public cset: ChangeQueue; // change set, ordered list of changes
 
       constructor () {
-        super();
-        this._rset = new utils.Map(utils.hash);
-        this._nset = new utils.Queue();
-        this._cset = new utils.Queue();
+        this.reset();
       }
 
-      /*
-       * The current change set, only exposed to aid debugging.
-       */
-      cset(): any [] {
-        return this._cset.array(); 
+      reset() {
+        this.rset = new ReadMap();
+        this.nset = new NewQueue();
+        this.cset = new ChangeQueue();
       }
 
-      /*
-       * Record object as been read
-       */
-      markRead(value: any) {
-        var t = tracker.getTracker(value);
-        utils.dassert(t.tc()===this);
-        this._rset.insert(t.id(), t.rev());
-      }
-
-      /*
-       * Readset access, only exposed to aid debugging
-       */
-      readsetSize() : number { 
-        return this._rset.size();
-      }
-
-      readsetObject(id: utils.uid) : number { 
-        return this._rset.find(id.toString())
-      }
-
-      /*
-       * Newset access, only exposed to aid debugging
-       */
-      newsetSize() : number { 
-        return this._nset.size();
-      }
-
-      newsetObject(id: utils.uid) : any { 
-        var ent=this._nset.first(function (entry: any) {
-          return entry.id.toString() === id.toString();
-        });
-        if (ent) return ent.obj;
-        return null;
-      }
-
-      /*
-       * Object change recording
-       */
-      addNew(obj: any, prop: string, value: any, lasttx: number): number {
-        this._cset.push({obj:obj, write: prop, value: value, lasttx: lasttx});
-        return this._cset.size() - 1;
-      }
-
-      addWrite(obj: any, prop: string, value: any, last: any, lasttx: number): number {
-        this._cset.push({obj:obj, write: prop, value: value, last: last, lasttx: lasttx});
-        return this._cset.size() - 1;
-      }
-
-      addDelete(obj: any, prop: string, lasttx: number): number {
-        this._cset.push({obj:obj, del: prop, lasttx: lasttx});
-        return this._cset.size() - 1;
-      }
-
-      addReverse(obj: any, lasttx: number): number {
-        this._cset.push({obj:obj, reverse: true, lasttx: lasttx});
-        return this._cset.size() - 1;
-      }
-
-      addSort(obj: any, lasttx: number): number {
-        this._cset.push({ obj: obj, sort: true, lasttx: lasttx });
-        return this._cset.size() - 1;
-      }
-
-      addShift(obj: any, at: number, size: number, lasttx: number): number {
-        this._cset.push({ obj: obj, shift: at, size: size, lasttx: lasttx });
-        return this._cset.size() - 1;
-      }
-
-      addUnshift(obj: any, at: number, size: number, lasttx: number): number {
-        this._cset.push({ obj: obj, unshift: at, size: size, lasttx: lasttx });
-        return this._cset.size() - 1;
-      }
-
-      /*
-       * Utility to change a sort record with a reinit during post-processing
-       */
-      replaceSort(at: number, obj: any, values: string) {
-        utils.dassert(this._cset.at(at).sort !== undefined);
-
-        // Null out history
-        var t = tracker.getTracker(obj);
-        var dead = t.lastChange();
-        while (dead !== -1) {
-          var c = dead;
-          dead = this._cset.at(dead).lasttx;
-          this._cset.setAt(c, null);
-        }
-
-        // Insert re-init
-        this._cset.push({ obj: obj, reinit: values, lasttx: -1 });
-        t.setLastChange(this._cset.size() - 1);
-      }
-
-      /*
-       * Return a full mtx record for stored changes. You can call this
-       * multiple times to get new change sets. Each time it is called 
-       * the oject/array states are reset so that only changes since it
-       * was last called are returned. 
-       *
-       * TODO: this whole thing is kludgy, needs better serial
-       */
-      mtx(cache: ObjectCache, serialise: bool = true) : any[] {
-
-        // We must collect over readset to build complete picture
-        this.collect(cache);
-
-        // Serialise the rset
-        var rset = [];
-        this._rset.apply(function (key, value) {
-          rset.push({ id:key, rev:value });
-          return true;
-        });
-
-        // Serialise the nset, this happens late as new objects are not tracked
-        var nset = [];
-        var that = this;
-        this._nset.apply(function (value) {
-          if (serialise)
-            nset.push({ id: value.id, value: serial.writeObject(that, value.obj) });
-          else
-            nset.push({ id: value.id, value: value.obj});
-        });
-
-        // Serialize cset
-        var cset = [];
-        for (var i = 0; i < this.cset().length; i++) {
-          var e = this.cset()[i]
-          if (e !== null) {
-            var x = utils.cloneObject(e);
-            x.id = tracker.getTracker(e.obj).id();
-            delete x.obj;
-            delete x.last;
-            delete x.lasttx;
-            cset.push(x);
-          }
-        }
-
-        // Form Mtx 
-        return [rset, nset, cset];
-      }
-
-      /*
-       * Return a local mtx record containing new objects. You can call this
-       * multiple times to get new change sets. Each time it is called 
-       * the oject/array states are reset so that only changes since it
-       * was called are returned. 
-       */
-      localMtx(cache: ObjectCache) : any[] {
-
-        // We must collect over readset to build complete picture
-        this.collect(cache);
-
-        // We are just going to return the new object
-        return this._nset.array();
-      }
-
-      resetMtx(): void {
-
-        // Reset Last change
-        for (var i = 0 ; i < this._cset.size(); i++) {
-          var e = this._cset.at(i);
-          if (e !== null) {
-            var t = tracker.getTracker(e.obj);
-            t.setLastChange(-1);
-          }
-        }
-
-        // Clear changes
-        this._cset = new utils.Queue();;
-        this._rset = new utils.Map(utils.hash);
-        this._nset = new utils.Queue();
-      }
-
-      okMtx(store: ObjectCache): void {
-        
-        // Start tracking the nset
-        var that = this;
-        this._nset.apply(function (value) {
-          new tracker.Tracker(that, value.obj, value.id, 0);
-          store.insert(value.id, value.obj);
-        });
-
-        this.resetMtx();
-      }
-
-      undoMtx(cache: ObjectCache, needCollect?: bool = true): void {
-        this.disable++;
-
-        // We must collect over readset to build complete picture
-        if (needCollect)
-          this.collect(cache);
-
-        // Unwind the cset actions
-        var i = this._cset.size() - 1;
-        while (i >= 0) {
-          var e = this._cset.at(i);
-          if (e !== null) {
-            var t = tracker.getTracker(e.obj);
-            if (!t.isDead()) {
-
-              // Try reverse if can
-              if (e.write !== undefined) {
-                if (e.last !== undefined) {
-                  e.obj[e.write] = e.last;
-                } else {
-                  if (utils.isArray(e.obj))
-                    e.obj.splice(parseInt(e.write), 1);
-                  else
-                    delete e.obj[e.write];
-                }
-              } else {
-                // Conservatively kill everything else
-                t.kill();
-                cache.remove(t.id());
-              }
-            }
-          }
-          i--;
-        }
-
-        // Reset internal state
-        var i = this._cset.size() - 1;
-        while (i >= 0) {
-          var e = this._cset.at(i);
-          if (e !== null) {
-            var t = tracker.getTracker(e.obj);
-            t.downrev(e.obj);
-          }
-          i--;
-        }
-
-        this.resetMtx();
-        this.disable--;
-      }
-
-      /*
-       * Obtain an id for any object. If passed an untracked object an id 
-       * will be assigned to it although the object will not be tracked. 
-       * Objects that are already been tracked by a different cache cause
-       * an exception.
-       */
-      valueId(value: any): utils.uid {
-        utils.dassert(utils.isObjectOrArray(value));
-
-        var t = tracker.getTrackerUnsafe(value);
-        if (t === null) {
-          if (value._pid === undefined) {
-            // Recurse into props of new object
-            var keys = Object.keys(value);
-            for (var k = 0; k < keys.length; k++) {
-              var key = keys[k];
-              if (utils.isObjectOrArray(value[key])) {
-                this.valueId(value[key]);
-              }
-            }
-
-            // Record this as new object
-            Object.defineProperty(value, '_pid', {
-              value: utils.UID()
-            });
-            this._nset.push({ id: value._pid, obj: value });
-          }
-          return value._pid;
-        } else {
-          if (t.tc() !== this)
-            utils.defaultLogger().fatal('Objects can not be used in multiple stores');
-          return value._tracker.id();
-        }
-      }
-
-      /*
-       * Obtain version number for any objects. Untracked objects are assumed
-       * to be version zero.
-       */
-      valueRev(value: any) : number {
-        if (value._tracker === undefined) {
-          return 0;
-        } else {
-          return value._tracker.rev();
-        }
-      }
-
-      /*
-       * Run post-processing over all object that have been read.
-       */
-      private collect(cache: ObjectCache) : void {
-        // Collect over the readset
-        var that = this;
-        this._rset.apply(function (key, value) {
-          var obj = cache.find(key);
-          utils.dassert(obj != null);
-          that.collectObject(obj);
-          return true;
-        });
-      };
-
-      /*
-       * Run post-processing over a specific object, for debug proposes only
-       */
-      collectObject(obj: any) {
-        utils.dassert(tracker.isTracked(obj));
-        if (obj instanceof Array) {
-          this.arrayChanges(obj);
-        } else {
-          this.objectChanges(obj);
-        }
-      }
-
-      /*
-       * Post-processing changes on an object
-       */
-      private objectChanges(obj) : void {
-        var t = tracker.getTracker(obj);
-        t.tc().disable++;
-
-        // Loop old props to find any to delete
-        var oldProps = utils.cloneArray(t.type().props());
-        var newProps = Object.keys(obj);
-        for (var i = 0; i < oldProps.length; i++) {
-          if (!obj.hasOwnProperty(oldProps[i]) || !tracker.isPropTracked(obj, oldProps[i])) {
-            t.addDelete(obj, oldProps[i]);
-          } else {
-            // Remove any old ones for next step
-            var idx = newProps.indexOf(oldProps[i]);
-            newProps[idx] = null;
-          }
-        }
-
-        // Add any new props 
-        for (var i = 0; i < newProps.length; i++) {
-          if (newProps[i] !== null) {
-            var v = serial.writeValue(t.tc(),obj[newProps[i]], '');
-            t.addNew(obj, newProps[i], v);
-            t.track(obj, newProps[i]);
-          }
-        }
-
-        if (t.hasChanges())
-          t.uprev(obj);
-        t.tc().disable--;
-      }
-
-      /*
-       * Post-processing changes on an array
-       */
-      private arrayChanges(obj) : void {
-        var t = tracker.getTracker(obj);
-        t.tc().disable++;
-
-        // Sorted arrays are treated as being fully re-initialized as we 
-        // can't track the impact of the sort. 
-
-        // First we construct an array of the writes upto the last sort
-        // if there was one
-        var at = t._lastTx;
-        var writeset = [];
-        while (at !== -1) {
-          if (this._cset.at(at).sort !== undefined) {
-            // Replace sort by a re-init
-            var v = serial.writeObject(t.tc(), obj, '');
-            this.replaceSort(at, obj, v);
-            t.uprev(obj);
-            t.tc().disable--;
-            return;  
-          } else {
-            writeset.unshift(this._cset.at(at));
-          }
-          at = this._cset.at(at).lasttx;
-        }
-
-        // Next we adjust the original props to account for how the array
-        // has been shifted so we can detect new props and delete old ones
-        // correctly.
-        // REMEMBER the props maybe sparse but shift/unshift is abs
-        var oldProps = utils.cloneArray(t.type().props());
-        for (var i = 0; i < writeset.length; i++) {
-          if (writeset[i].shift != undefined) {
-            var at = writeset[i].shift;
-            var size = writeset[i].size;
-
-            var j = 0;
-            while (true) {
-              if (j === oldProps.length) break;
-              var idx = +oldProps[j];
-              if (idx >= at && idx < at + size) {
-                oldProps.splice(j, 1);
-              } else if (idx >= at + size) {
-                oldProps[j] = (idx - size)+'';
-                j++;
-              } else {
-                j++;
-              }
-            }
-
-          } else if (writeset[i].unshift != undefined) {
-            var at = writeset[i].unshift;
-            var size = writeset[i].size;
-
-            var j = 0;
-            var inserted = false;
-            while (true) {
-              if (j === oldProps.length) break;
-              var idx = +oldProps[j];
-              if (!inserted) {
-                if (idx >= at) {
-                  for (var k = size - 1 ; k >= 0; k--)
-                    oldProps.splice(j, 0, (at + k) + '')
-                  inserted = true;
-                  j += size;
-                } else {
-                  j ++;
-                }
-              } else {
-                oldProps[j] = (idx + size) + '';
-                j++;
-              }
-              
-            }
-
-            if (!inserted) {
-              for (var k = 0 ; k < size; k++)
-                oldProps.push((at+k)+'');
-            } 
-          }
-        }
-
-        // Pop oldProps that are bigger than current length
-        var pop = 0;
-        for (var i = oldProps.length-1; i >= 0; i--) {
-          if (+oldProps[i] >= obj.length) {
-            pop++;
-          } else {
-            break;
-          }
-        }
-        if (pop > 0) {
-          t.addShift(obj, obj.length, (+oldProps[oldProps.length - 1]) - obj.length +1);
-          while (pop > 0) {
-            oldProps.pop();
-            pop--;
-          }
-        }
-
-        // Write any old props that have been changed
-        for (var i = 0; i < oldProps.length; i++) {
-          if (!obj.hasOwnProperty(oldProps[i])) {
-            t.addDelete(obj, oldProps[i]);
-          } else if (!tracker.isPropTracked(obj, oldProps[i])) {
-            var v = serial.writeValue(t.tc(), obj[oldProps[i]], '');
-            t.addNew(obj, oldProps[i], v);
-            t.track(obj, oldProps[i]);
-          }
-        }
-
-        // Add new props
-        var newProps = Object.keys(obj);
-        for (var i = 0; i < newProps.length; i++) {
-          var idx = oldProps.indexOf(newProps[i]);
-          if (idx === -1) {
-            var v = serial.writeValue(t.tc(), obj[newProps[i]], '');
-            t.addNew(obj, newProps[i], v);
-            t.track(obj, newProps[i]);
-          }
-        }
-
-        if (t.hasChanges())
-          t.uprev(obj);
-        t.tc().disable--;
+      toString() {
+        var str = '';
+        str += 'Read:\n'+this.rset.toString();
+        str += 'New:\n' + this.nset.toString();
+        str += 'Changed:\n' +this.cset.toString();
+        return str;
       }
     }
 

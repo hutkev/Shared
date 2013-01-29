@@ -13,24 +13,29 @@ module shared {
      * A network wide unique id wrapper. 
      * Pragmatically it must be a UUID and exposable as a string.
      */
-    export interface uid extends String { }
 
-    var uuidStr = '^[0-9a-fA-F]{24}$';
-    var uuidPat = new RegExp(uuidStr);
+    export var uidStringLength = 24;
+
+    export interface uid { 
+      toString(): string;
+    }
 
     export function UID(): uid {
-      var o = new ObjectID();
-      return o.toHexString();
+      return new ObjectID();
     }
 
     export function isUID(a: uid) {
-      return isValue(a) && uuidPat.test(a.toString());
+      return (a instanceof ObjectID);
     }
 
     export function makeUID(id: string) {
-      var uid = new String(id);
-      dassert(isUID(uid));
+      var uid = new ObjectID(id);
+      dassert(isUID(uid) && uid.toString()==id);
       return uid;
+    }
+
+    export function toObjectID(id: uid) {
+      return id;
     }
 
     /*
@@ -50,6 +55,43 @@ module shared {
         if (this._id === null)
           this._id = UID();
         return this._id;
+      }
+    }
+
+    /*
+     * Map specialized for using id keys. A bodge until generics are supported.
+     */
+    export class IdMap {
+      private _map: utils.Map = new utils.Map(utils.hash);
+
+      size(): number {
+        return this._map.size();
+      }
+
+      find(key: uid) : any {
+        return this._map.find(key.toString());
+      }
+
+      insert(key: uid, value: any) : bool {
+        return this._map.insert(key.toString(), value);
+      }
+
+      findOrInsert(key: uid, proto? = {}): any {
+        return this._map.findOrInsert(key.toString(), proto);
+      }
+
+      remove(key: uid) : bool {
+        return this._map.remove(key.toString());
+      }
+
+      apply(handler : (key: uid, value: any) => bool) : bool {
+        return this._map.apply(function (k, v) {
+          return handler(makeUID(k), v);
+        });
+      }
+
+      removeAll() : void {
+        this._map.removeAll();
       }
     }
 

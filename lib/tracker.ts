@@ -134,8 +134,10 @@ module shared {
       private _tc: TrackCache;
       private _id: utils.uid;
       private _rev;
+      private _ref;
       private _type: types.TypeDesc;
-      public _lastTx: number;
+      public _lastTx: number;                 // TODO: Why public?
+      private _userdata: any;
       public toBSON: () => any;
 
       constructor(tc: TrackCache, obj: any, id: utils.uid = utils.UID(), rev?: number) {
@@ -156,6 +158,8 @@ module shared {
         this._lastTx = -1;
         this._id = id;
         this._type = types.TypeStore.instance().type(obj);
+        this._userdata = null
+        this._ref = 0;
 
         // Add tracker to object
         Object.defineProperty(obj, '_tracker', {
@@ -200,7 +204,6 @@ module shared {
         return this._tc;
       };
 
-
       /**
        * Get the unique object id
        */
@@ -233,6 +236,33 @@ module shared {
         }
         return this._rev;
       };
+
+      /**
+       * Get/Increment the object revision, returning new value
+       */
+      ref(by?: number) : number {
+        if (by !== undefined)
+          this._ref += by;
+        return this._ref;
+      };
+
+      /**
+       * Set object rev to a value, must be >= to existing rev
+       */
+      setRef(to: number) : number {
+        if (to >= this._ref) {
+          this._ref = to;
+        }
+        return this._ref;
+      };
+
+      setData(ud: any) {
+        this._userdata = ud;
+      }
+
+      getData() : any {
+        return this._userdata;
+      }
 
       // Create a fake object for BSON
       bson(obj: any) {

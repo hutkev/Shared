@@ -1,7 +1,10 @@
 
-Object Protection get/set, proto etc
-Improve Router cluster worker search
-Stack check on router local send
-Incoming mtx validation
-Binary serialization
-GC semantics
+Lock release
+Code Tidy 
+Outgoing edge count
+Remove serialization?
+Object split control
+
+Arrays
+Stub mongo -> Performance measure
+Triggers
