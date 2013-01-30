@@ -1,10 +1,11 @@
 
-Lock release
-Code Tidy 
 Outgoing edge count
-Remove serialization?
-Object split control
-
 Arrays
-Stub mongo -> Performance measure
+BSON Self Reference
+
+Next Version
+============
+Performance Profile
+Object split control
+GC Cyclic References
 Triggers

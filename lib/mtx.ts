@@ -231,9 +231,9 @@ module shared {
           str += tracker.getTracker(item.obj).id();
           str += ' '
           if (item.write) {
-            str += 'write ' + item.write + ' = ' + item.value;
+            str += 'write ' + item.write + ' = ' + JSON.stringify(item.value);
             if (item.last)
-              str += ' last ' + item.last;
+              str += ' last ' + JSON.stringify(item.last);
           } else if (item.del) {
             str += 'delete ' + item.del;
           } else if (item.reinit) {

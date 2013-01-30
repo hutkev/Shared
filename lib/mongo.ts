@@ -259,9 +259,10 @@ module shared {
           utils.dassert(this._cache.find(nentry.id) === null);
 
           // Write with 1 ref, but compensate in r&r set
-          curP = that.wait(curP, function () {
-            return that.writeObject(nentry.id, nentry.obj, 1);
+          var writeObjectFn = (function (_id,_obj,_ref) {
+            return function () {return that.writeObject(_id, _obj, _ref) };
           });
+          curP = that.wait(curP, writeObjectFn(nentry.id, nentry.obj, 1));
           var rr: RRData = { uprev: false, ref: -1, };
           rrset.insert(nentry.id, rr);
 
@@ -286,9 +287,6 @@ module shared {
 
           // Write prop
           if (e.write !== undefined) {
-            // TODO: Do we need to de-serial?
-            var val = serial.readValue(e.value);
-
             // Deref un-loaded value
             if (utils.isObject(e.last)) {
               var vid = this.objectID(e.last);
@@ -296,16 +294,19 @@ module shared {
               rr.ref--;
             }
 
-            // Upref loaded value
-            if (utils.isObject(val)) {
+            // Handle object assignment
+            var val = e.value;
+            if (utils.isObject(e.value)) {
               var vid = this.objectID(val);
+              val = new serial.Reference(vid);
               var rr: RRData = rrset.findOrInsert(vid, { uprev: true, ref: 0 });
               rr.ref++;
             }
 
-            curP = that.wait(curP, function () {
-              return that.writeProp(id, e.write, val);
+            var writePropFn = (function (_id,_write,_val) {
+              return function () {return that.writeProp(_id, _write, _val) };
             });
+            curP = that.wait(curP, writePropFn(id,e.write,val));
           }
 
           // Delete Prop
@@ -315,9 +316,10 @@ module shared {
             var rd: RefData = t.getData();
             if (rd.rout > 0) {
 
-              curP = that.wait(curP, function () {
-                return that.readProp(t.id(), e.del);
+              var readPropFn = (function (_id,_del) {
+                return function () {return that.readProp(_id, _del)};
               });
+              curP = that.wait(curP, readPropFn(t.id(), e.del));
 
               curP = that.wrap(curP, function (value) {
                 if (utils.isObject(value)) {
@@ -330,9 +332,10 @@ module shared {
               });
             }
 
-            curP = that.wait(curP, function () {
-              return that.deleteProp(t.id(), e.del);
+            var deletePropFn = (function (_id,_del) {
+              return function () {return that.deleteProp(_id, _del)};
             });
+            curP = that.wait(curP, deletePropFn(t.id(), e.del));
           }
 
             /*
@@ -411,18 +414,22 @@ module shared {
         curP.then(function () {
           var done = new rsvp.Promise();
           done.resolve();
+
           rrset.apply(function (id: utils.uid, rr: RRData) {
             if (rr.uprev || rr.ref !== 0) {
-              done = that.wait(done, function () {
-                return that.changeRevAndRef(id, rr.uprev, rr.ref);
+              var changeRevAndRefFn = (function (_id,_uprev,_ref) {
+                return function () {return that.changeRevAndRef(_id, _uprev, _ref) };
               });
+              done = that.wait(done, changeRevAndRefFn(id, rr.uprev, rr.ref));
             }
           });
+
           done.then(function () {
             rrP.resolve();
           }, function (err) {
             rrP.reject(err);
           });
+
         }, function (err) {
           rrP.reject(err);
         });
@@ -929,11 +936,11 @@ module shared {
       private writeProp(oid: utils.uid, prop:string, value:any) : rsvp.Promise {
         var that = this;
         var p = new rsvp.Promise();
-
-        var upd = { _data: {} };
+        
         if (value instanceof serial.Reference)
           value = { _id: value.id() };
-        upd._data[prop] = value;
+        var upd = {};
+        upd['_data.'+prop] = value;
         that._logger.debug('STORE', '%s: Updating property: %s[%s] %j', that.id(), oid, prop, value);
         that._collection.update({ _id:  utils.toObjectID(oid) }, { $set: upd }, { safe: that._safe }, function (err,count) {
           if (err) {

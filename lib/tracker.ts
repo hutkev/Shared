@@ -457,8 +457,7 @@ module shared {
             // Record writes of new data
             for (var i = 0; i < arguments.length; i++) {
               t.track(arr, i + '');
-              var v = serial.writeValue(t.tc(), arr[i], '');
-              t.addNew(arr, i + '', v);
+              t.addNew(arr, i + '', arr[i]);
             }
 
             // Restore our tracking
@@ -667,8 +666,7 @@ module shared {
         set: function (setValue) {
           if (tracker.tc().disable === 0) {
             tracker.tc().disable++;
-            var newVal = serial.writeValue(tracker.tc(), setValue, '');
-            tracker.addWrite(obj, prop, newVal, value);
+            tracker.addWrite(obj, prop, setValue, value);
             tracker.tc().disable--;
           }
           value = setValue;

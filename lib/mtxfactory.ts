@@ -98,12 +98,18 @@ module shared {
        * Object change recording
        */
       addNew(obj: any, prop: string, value: any, lasttx: number): number {
-        this._mtx.cset.push({obj:obj, write: prop, value: value, lasttx: lasttx});
+        if (utils.isObjectOrArray(value))
+          this.valueId(value);
+        var v = value; //serial.writeValue(this, value, '');
+        this._mtx.cset.push({obj:obj, write: prop, value: v, lasttx: lasttx});
         return this._mtx.cset.size() - 1;
       }
 
       addWrite(obj: any, prop: string, value: any, last: any, lasttx: number): number {
-        this._mtx.cset.push({obj:obj, write: prop, value: value, last: last, lasttx: lasttx});
+        if (utils.isObjectOrArray(value))
+          this.valueId(value);
+        var v = value;  //serial.writeValue(this, value, '');
+        this._mtx.cset.push({obj:obj, write: prop, value: v, last: last, lasttx: lasttx});
         return this._mtx.cset.size() - 1;
       }
 
@@ -327,8 +333,7 @@ module shared {
         // Add any new props 
         for (var i = 0; i < newProps.length; i++) {
           if (newProps[i] !== null) {
-            var v = serial.writeValue(t.tc(),obj[newProps[i]], '');
-            t.addNew(obj, newProps[i], v);
+            t.addNew(obj, newProps[i], obj[newProps[i]]);
             t.track(obj, newProps[i]);
           }
         }
@@ -444,8 +449,7 @@ module shared {
           if (!obj.hasOwnProperty(oldProps[i])) {
             t.addDelete(obj, oldProps[i]);
           } else if (!tracker.isPropTracked(obj, oldProps[i])) {
-            var v = serial.writeValue(t.tc(), obj[oldProps[i]], '');
-            t.addNew(obj, oldProps[i], v);
+            t.addNew(obj, oldProps[i], obj[oldProps[i]]);
             t.track(obj, oldProps[i]);
           }
         }
@@ -455,8 +459,7 @@ module shared {
         for (var i = 0; i < newProps.length; i++) {
           var idx = oldProps.indexOf(newProps[i]);
           if (idx === -1) {
-            var v = serial.writeValue(t.tc(), obj[newProps[i]], '');
-            t.addNew(obj, newProps[i], v);
+            t.addNew(obj, newProps[i], obj[newProps[i]]);
             t.track(obj, newProps[i]);
           }
         }
