@@ -136,25 +136,14 @@ module shared {
                   that._logger.debug('STORE', 'Objects need refresh after commit failure');
                   that.undo();
 
-                  var curP = new rsvp.Promise();
-                  curP.resolve();
-                  that.lock(curP, MINLOCK).then(function () {
-                    that.refreshSet(err).then(function () {
-                      that.removeLock().then(function () {
-                        that._logger.debug('STORE', 'Starting re-try');
-                        done.reject(null);  // A retry request
-                      }, function (err) {
-                        that.removeLock().then(function () {
-                          done.reject(err);
-                        });
-                      });
-                    }, function (err) {
-                      that.removeLock().then(function () {
-                        done.reject(err);
-                      });
-                    });
+                  // Refresh out-of date objects
+                  that.locked(function () {
+                    return that.refreshSet(err);
+                  }).then(function () {
+                    that._logger.debug('STORE', 'Starting re-try');
+                    done.reject(null)
                   }, function (err) {
-                    done.reject(err);
+                    done.reject(err)
                   });
                 }
               } else {
@@ -175,30 +164,34 @@ module shared {
             var unk: tracker.UnknownReference = e;
             var missing = that._cache.find(unk.missing());
             if (missing === null) {
+
+              // Load the object
               var curP = that.getCollection();
-              that.lock(curP, MINLOCK).then(function () {
-                that.getObject(unk.missing()).then(function (obj) {
-                  that.removeLock().then(function () {
+              curP = that.wait(curP, function () {
+                return that.locked(function () {
+
+                  // Get the object
+                  var nestedP = that.getObject(unk.missing());
+
+                  // Assign it if needed
+                  nestedP = that.wrap(nestedP, function (obj) {
                     if (unk.id() !== undefined) {
                       var assign: any = that._cache.find(unk.id());
                       if (assign !== null) {
                         that.disable++;
                         assign[unk.prop()] = obj;
                         that.disable--;
+
+                        // Request retry
+                        done.reject(null);
                       }
                     }
-                    done.reject(null);  // A retry request
-                  }, function (err) {
-                    done.reject(err);
                   });
-                }, function (err) {
-                  that.removeLock().then(function () {
-                    done.reject(err);
-                  });
+
+                  return nestedP;
                 });
-              }, function (err) {
-                done.reject(err);
               });
+
             } else {
               // Commit available to the prop
               var to = this._cache.find(unk.id());
@@ -214,41 +207,48 @@ module shared {
         return done;
       }
 
-      private commitMtx(mtx: mtx.MTX) : rsvp.Promise {
+      private commitMtx(mtx: mtx.MTX): rsvp.Promise {
         utils.dassert(utils.isValue(mtx));
         this._logger.debug('STORE', '%s: commitMtx()', this.id(), mtx.toString());
         var that = this;
 
-        // If not many new objects just take the lock
-        var prelock = false;
-        curP = new rsvp.Promise();
-        curP.resolve();
-        var curP: rsvp.Promise;
-        if (mtx.nset.size() < 10) {
-          curP = that.lock(curP, MINLOCK);
-          prelock = true;
-        }
-
-        // Check for versions, rejects with array of out of date object ids
-        curP = that.chain(curP, function () {
-          var p = new rsvp.Promise();
-          that.checkReadset(mtx.rset).then(
-            function (fails) {
-              var failed = fails.filter(function (v) { return v !== null })
-              if (failed.length > 0) {
-                that._logger.debug('STORE', '%s: checkReadset2 failures', that.id(), failed);
-                that.failInLock(p, failed, prelock);
-              } else {
-                p.resolve();
-              }
-            }, function (err) {
-              that._logger.debug('STORE', '%s: checkReadset2 failed', that.id());
-              that.failInLock(p, err, prelock);
-            }
-          );
-          return p;
+        return that.locked(function () {
+          return that.applyMtx(mtx);
         });
-        
+      }
+
+      private applyMtx(mtx: mtx.MTX): rsvp.Promise {
+        var that = this;
+        var curP = new rsvp.Promise();
+
+        // Check readset is OK
+        that.checkReadset(mtx.rset).then(
+          function (fails) {
+            var failed = fails.filter(function (v) { return v !== null })
+            if (failed.length > 0) {
+              that._logger.debug('STORE', '%s: checkReadset failures', that.id(), failed);
+              curP.reject(failed);
+            } else {
+              curP.resolve();
+            }
+          }, function (err) {
+            that._logger.debug('STORE', '%s: checkReadset failed', that.id());
+            curP.reject(err);
+          }
+        );
+
+        // Make changes
+        return that.wait(curP, function () {
+          return that.makeChanges(mtx);
+        });
+      }
+
+      private makeChanges(mtx: mtx.MTX) : rsvp.Promise {
+        var that = this;
+
+        var curP = new rsvp.Promise();
+        curP.resolve();
+
         // Ref & Rev set, for later action
         var rrset = new utils.IdMap();
 
@@ -259,36 +259,15 @@ module shared {
           utils.dassert(this._cache.find(nentry.id) === null);
 
           // Write with 1 ref, but compensate in r&r set
-          curP = that.writeObject(curP, nentry.id, nentry.obj, 1);
+          curP = that.wait(curP, function () {
+            return that.writeObject(nentry.id, nentry.obj, 1);
+          });
           var rr: RRData = { uprev: false, ref: -1, };
           rrset.insert(nentry.id, rr);
 
           // Time to start tracking changes
           new tracker.Tracker(that, nentry.obj, nentry.id, 0);
           that._cache.insert(nentry.id, nentry.obj);
-        }
-
-        // If not pre-locked we need to lock and check versions again
-        if (!prelock) {
-          curP = that.lock(curP, MINLOCK)
-          curP = that.chain(curP, function () {
-            var p = new rsvp.Promise();
-            that.checkReadset(mtx.rset).then(
-              function (fails) {
-                var failed = fails.filter(function (v) { return v !== null })
-                if (failed.length > 0) {
-                  that._logger.debug('STORE', '%s: checkReadset failures', that.id(), failed);
-                  that.failInLock(p, failed);
-                } else {
-                  p.resolve();
-                }
-              }, function (err) {
-                that._logger.debug('STORE', '%s: checkReadset failed', that.id());
-                that.failInLock(p, err);
-              }
-            );
-            return p;
-          });
         }
 
         // Now for the main body of changes
@@ -302,7 +281,7 @@ module shared {
           var refdata: RefData = t.getData();
 
           // Record need to up revision, for later 
-          var rr: RRData = rrset.findOrInsert(t.id(), {uprev: true, ref: 0 });
+          var rr: RRData = rrset.findOrInsert(t.id(), { uprev: true, ref: 0 });
           rr.uprev = true;
 
           // Write prop
@@ -315,7 +294,6 @@ module shared {
               var vid = this.objectID(e.last);
               var rr: RRData = rrset.findOrInsert(vid, { uprev: true, ref: 0 });
               rr.ref--;
-              //curP = that.changeRef(curP, vid, -1);
             }
 
             // Upref loaded value
@@ -323,10 +301,11 @@ module shared {
               var vid = this.objectID(val);
               var rr: RRData = rrset.findOrInsert(vid, { uprev: true, ref: 0 });
               rr.ref++;
-              //curP = that.changeRef(curP, vid, 1);
             }
 
-            curP = that.writeProp(curP, id, e.write, val);
+            curP = that.wait(curP, function () {
+              return that.writeProp(id, e.write, val);
+            });
           }
 
           // Delete Prop
@@ -335,24 +314,25 @@ module shared {
             var t = tracker.getTracker(e.obj);
             var rd: RefData = t.getData();
             if (rd.rout > 0) {
-              var oldP = curP;
-              curP = new rsvp.Promise();
-              var greenP = curP;
-              that.readProp(oldP, t.id(), e.del).then(function (value) {
+
+              curP = that.wait(curP, function () {
+                return that.readProp(t.id(), e.del);
+              });
+
+              curP = that.wrap(curP, function (value) {
                 if (utils.isObject(value)) {
                   var vkeys = Object.keys(value);
                   if (vkeys.length === 1 && vkeys[0] === '_id') {
                     var rr: RRData = rrset.findOrInsert(value._id, { uprev: false, ref: 0 });
                     rr.ref--;
                   }
-                  greenP.resolve();
                 }
-              }, function (err) {
-                that.failInLock(greenP, err);
               });
             }
 
-            curP = that.deleteProp(curP, t.id(), e.del);
+            curP = that.wait(curP, function () {
+              return that.deleteProp(t.id(), e.del);
+            });
           }
 
             /*
@@ -420,7 +400,7 @@ module shared {
             Array.prototype.splice.apply(rec.obj, args);
           } 
           */
-          
+
           else {
             this._logger.fatal('%s: cset contains unexpected command', t.id());
           }
@@ -433,7 +413,9 @@ module shared {
           done.resolve();
           rrset.apply(function (id: utils.uid, rr: RRData) {
             if (rr.uprev || rr.ref !== 0) {
-              done = that.changeRevAndRef(done, id, rr.uprev, rr.ref);
+              done = that.wait(done, function () {
+                return that.changeRevAndRef(id, rr.uprev, rr.ref);
+              });
             }
           });
           done.then(function () {
@@ -445,7 +427,7 @@ module shared {
           rrP.reject(err);
         });
 
-        return this.chain(rrP, this.removeLock);
+        return rrP;
       }
 
       private undo() {
@@ -475,21 +457,6 @@ module shared {
         var msg=utils.format('', fmt, msgs);
         this._logger.debug('STORE', msg);
         promise.reject(new Error(msg));
-      }
-
-      private chain(chainP: rsvp.Promise, fn): rsvp.Promise {
-        var that = this;
-        var p = new rsvp.Promise();
-        chainP.then(function () {
-          fn.apply(that).then(function () {
-            p.resolve();
-          }, function (err) {
-            p.reject(err);
-          });
-        }, function (err) {
-          p.reject(err);
-        });
-        return p;
       }
 
       private updateObject(doc: any, proto?: any) : ObjectData {
@@ -552,6 +519,59 @@ module shared {
         return { obj: proto, id: doc._id, rev: doc._rev, ref: doc._ref, out: out };
       }
 
+      /* ----------------------------- ASYNC HELPERS ------------------------------- */
+
+      private wait(chainP: rsvp.Promise, fn: (args: any[]) => rsvp.Promise): rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+        chainP.then(function () {
+          fn.apply(that,arguments).then(function () {
+            p.resolve.apply(p,arguments);
+          }, function (err) {
+            p.reject(err);
+          });
+        }, function (err) {
+          p.reject(err);
+        });
+        return p;
+      }
+
+      private wrap(chainP: rsvp.Promise, fn: (args: any[]) => any): rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+        chainP.then(function () {
+          p.resolve(fn.apply(that, arguments));
+        });
+        return p;
+      }
+
+      private locked(fn : () => rsvp.Promise): rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+
+        that.lock().then(function () {
+
+          fn().then(function () {
+            var args = arguments;
+            that.removeLock().then(function () {
+              p.resolve(args);
+            }, function (err) {
+              p.reject(err);
+            });
+          }, function (err) {
+            that.removeLock().then(function () {
+              p.reject(err);
+            }, function (err) {
+              p.reject(err);
+            });
+          });
+
+        }, function (err) {
+          p.reject(err);
+        });
+        return p;
+      }
+
       /* ----------------------------- MONGO CODE ----------------------------------- */
 
       private getCollection() : rsvp.Promise {
@@ -578,13 +598,17 @@ module shared {
                 that.fail(done, '%s: Unable to open collection: %s : %s', that.id(), that._collectionName, err.message);
               } else {
                 that._collection = collection;
+
                 // Init collection
-                var lockP = new rsvp.Promise()
-                that.ensureExists(lockUID, {locked : false}, lockP, null);
-                lockP.then(function () {
-                  that.ensureExists(rootUID, { _rev: 0, _ref: 1, _type: 'Object', _data : { } }, done, collection);
+                var curP = that.ensureExists(lockUID, {locked : false}, null);
+                curP = that.wait(curP, function () {
+                  return that.ensureExists(rootUID, { _rev: 0, _ref: 1, _type: 'Object', _data: {} }, collection);
+                });
+
+                curP.then(function () {
+                  done.resolve();
                 }, function (err) {
-                  done.reject(err)
+                  done.resolve(err);
                 });
               }
             });
@@ -593,76 +617,73 @@ module shared {
         return done;
       }
 
-      private lock(chainP : rsvp.Promise, timeout: number) : rsvp.Promise {
+      private lock(timeout?: number=MINLOCK) : rsvp.Promise {
         var that = this;
         var p = new rsvp.Promise();
-        chainP.then(function () {
-          that._logger.debug('STORE', '%s: Trying to acquire lock', that.id());
-          var oid = utils.toObjectID(lockUID);
-          var rand = new bson.ObjectId().toString();
-          that._collection.findAndModify({ _id: oid, locked: false }, [], 
-            { _id: oid, owner: that.id().toString(), host: utils.hostInfo(), pid: process.pid, rand: rand, locked: true },
-            { safe: true, upsert: false, remove: false, new: false }, function (err, doc) {
-            if (err) {
-              that.fail(p,'%s: Unable query lock : %s', that.id(), err.message);
-            } else if (!doc) {
 
-              // Report on current state
-              if (timeout > CHECKRAND) {
-                that._collection.findOne({ _id: oid }, function (err, doc) {
-                  if (err) {
-                    that.fail(p, '%s: Unable query lock : %s', that.id(), err.message);
-                  } else {
-                    that._logger.debug('STORE', '%s: Locked by: %s', that.id(), doc.host);
+        that._logger.debug('STORE', '%s: Trying to acquire lock', that.id());
+        var oid = utils.toObjectID(lockUID);
+        var rand = new bson.ObjectId().toString();
+        that._collection.findAndModify({ _id: oid, locked: false }, [], 
+          { _id: oid, owner: that.id().toString(), host: utils.hostInfo(), pid: process.pid, rand: rand, locked: true },
+          { safe: true, upsert: false, remove: false, new: false }, function (err, doc) {
+          if (err) {
+            that.fail(p,'%s: Unable query lock : %s', that.id(), err.message);
+          } else if (!doc) {
 
-                    // If lock rand is changing, reset timout so we don't kill unecessarily
-                    if (doc && doc['rand'] !== undefined && that._lockRand !== doc.rand) {
-                      if (that._lockRand)
-                        that._logger.debug('STORE', '%s: Lock rand has changed, %s to %s, reseting timeout', that.id(), that._lockRand, doc.rand);
-                      that._lockRand = doc.rand;
-                      timeout = CHECKRAND;
-                    }
+            // Report on current state
+            if (timeout > CHECKRAND) {
+              that._collection.findOne({ _id: oid }, function (err, doc) {
+                if (err) {
+                  that.fail(p, '%s: Unable query lock : %s', that.id(), err.message);
+                } else {
+                  that._logger.debug('STORE', '%s: Locked by: %s', that.id(), doc.host);
 
-                    // We are going to have to break this
-                    if (timeout > MAXLOCK) {
-                      that._logger.debug('STORE', '%s: Lock owner must be dead, trying to remove', that.id());
-                      that.removeLock().then(function () {
-                        that.lock(chainP, MINLOCK).then(function () {
-                          p.resolve();
-                        }, function (err) {
-                          p.reject(err);
-                        });
-                      }, function (err) {
-                        p.resolve(err);
-                      });
-                    } else {
-                      setTimeout(function () {
-                        that.lock(chainP, timeout * 2).then(function () {
-                          p.resolve();
-                        }, function (err) {
-                          p.reject(err);
-                        })
-                      }, timeout);
-                    }
+                  // If lock rand is changing, reset timout so we don't kill unecessarily
+                  if (doc && doc['rand'] !== undefined && that._lockRand !== doc.rand) {
+                    if (that._lockRand)
+                      that._logger.debug('STORE', '%s: Lock rand has changed, %s to %s, reseting timeout', that.id(), that._lockRand, doc.rand);
+                    that._lockRand = doc.rand;
+                    timeout = CHECKRAND;
                   }
-                });
-              } else {
-                // < CHECK time, just try again
-                setTimeout(function () {
-                  that.lock(chainP, timeout * 2).then(function () {
-                    p.resolve();
-                  }, function (err) {
-                    p.reject(err);
-                  })
-                }, timeout);
-              }
+
+                  // We are going to have to break this
+                  if (timeout > MAXLOCK) {
+                    that._logger.debug('STORE', '%s: Lock owner must be dead, trying to remove', that.id());
+                    that.removeLock().then(function () {
+                      that.lock().then(function () {
+                        p.resolve();
+                      }, function (err) {
+                        p.reject(err);
+                      });
+                    }, function (err) {
+                      p.resolve(err);
+                    });
+                  } else {
+                    setTimeout(function () {
+                      that.lock(timeout * 2).then(function () {
+                        p.resolve();
+                      }, function (err) {
+                        p.reject(err);
+                      })
+                    }, timeout);
+                  }
+                }
+              });
             } else {
-              that._logger.debug('STORE', '%s: Acquired lock', that.id());
-              p.resolve();
+              // < CHECK time, just try again
+              setTimeout(function () {
+                that.lock(timeout * 2).then(function () {
+                  p.resolve();
+                }, function (err) {
+                  p.reject(err);
+                })
+              }, timeout);
             }
-          });
-        }, function (err) {
-          p.reject(err);
+          } else {
+            that._logger.debug('STORE', '%s: Acquired lock', that.id());
+            p.resolve();
+          }
         });
         return p;
       }
@@ -685,18 +706,6 @@ module shared {
         return done;
       }
 
-      private failInLock(promise: rsvp.Promise, error: any, inlock?: bool =true) {
-        if (inlock) {
-          this.removeLock().then(function () {
-            promise.reject(error);
-          }, function (err) {
-            promise.reject(err);
-          });
-        } else {
-          promise.reject(error);
-        }
-      }
-
       private getRoot(): rsvp.Promise {
         var that = this;
         var done = new rsvp.Promise();
@@ -705,22 +714,26 @@ module shared {
           done.resolve(that._root);
         } else {
           var curP = that.getCollection();
-          that.lock(curP, MINLOCK).then(function () {
-            that.getObject(rootUID).then(function (obj) {
-              that.removeLock().then(function () {
-                that._root = obj;
-                done.resolve(obj);
+          curP.then(function () {
+            that.lock().then(function () {
+              that.getObject(rootUID).then(function (obj) {
+                that.removeLock().then(function () {
+                  that._root = obj;
+                  done.resolve(obj);
+                }, function (err) {
+                  done.reject(err);
+                });
               }, function (err) {
-                done.reject(err);
+                that.removeLock().then(function () {;
+                  done.reject(err);
+                });
               });
             }, function (err) {
-              that.removeLock().then(function () {;
-                done.reject(err);
-              });
-            });
+              done.reject(err);
+            })
           }, function (err) {
             done.reject(err);
-          })
+          });
         }
         return done;
       }
@@ -737,7 +750,7 @@ module shared {
               that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
             } else {
               if (doc === null) {
-                that.fail(done, '%s: Object missing in store: %s : %s', that.id(), oid);
+                that.fail(done, '%s: Object missing in store: %s', that.id(), oid);
               } else {
                 that._logger.debug('STORE', '%s: Loading object: %s:%d', that.id(), oid, doc._rev);
                 // Load the new object
@@ -770,52 +783,61 @@ module shared {
         return done;
       }
 
-      private writeObject(chainP: rsvp.Promise, oid:utils.uid, obj:any, ref:number) : rsvp.Promise {
+      private refreshSet(failed: utils.uid[]): rsvp.Promise {
+        var that = this;
+
+        var fails = [];
+        for (var i = 0; i < failed.length; i++) {
+          fails.push(that.getObject(failed[i]));
+        }
+        return rsvp.all(fails);
+      }
+
+      private writeObject(oid:utils.uid, obj:any, ref:number) : rsvp.Promise {
         utils.dassert(utils.isValue(oid) && utils.isValue(obj));
         var that = this;
 
+        // Prep a copy for upload
+        var fake : any = {};
+        fake._data = utils.cloneObject(obj);
+        var keys = Object.keys(obj);
+        for (var k = 0; k < keys.length; k++) {
+          if (utils.isObjectOrArray(obj[keys[k]])) {
+            var id = that.valueId(obj[keys[k]]);
+            fake._data[keys[k]] = { _id: id.toString() };
+          }
+        }
+        fake._id = utils.toObjectID(oid);  
+        fake._rev = 0;
+        fake._ref = ref;
+        fake._type = utils.isObject(obj)?'Object':'Array';
+
+        // Upload the fake
         var p = new rsvp.Promise();
-        chainP.then(function () {
-          // Prep a copy for upload
-          var fake : any = {};
-          fake._data = utils.cloneObject(obj);
-          var keys = Object.keys(obj);
-          for (var k = 0; k < keys.length; k++) {
-            if (utils.isObjectOrArray(obj[keys[k]])) {
-              var id = that.valueId(obj[keys[k]]);
-              fake._data[keys[k]] = { _id: id.toString() };
+        that._logger.debug('STORE', '%s: Updating object: %s %j', that.id(), oid, obj);
+        that._collection.update({ _id: fake._id }, fake, { safe: that._safe, upsert: true }, function (err,count) {
+          if (err) {
+            that.fail(p, '%s: Update failed on new object %s=%j error %s', that.id(), id, obj, err.message);
+          } else {
+            if (that._safe && count !== 1) {
+              that.fail(p, '%s: Update failed on new object %s=%j count %d', that.id(), id, obj, count);
+            } else {
+              p.resolve();
             }
           }
-          fake._id = utils.toObjectID(oid);  
-          fake._rev = 0;
-          fake._ref = ref;
-          fake._type = utils.isObject(obj)?'Object':'Array';
-
-          // Upload the fake
-          that._logger.debug('STORE', '%s: Updating object: %s %j', that.id(), oid, obj);
-          that._collection.update({ _id: fake._id }, fake, { safe: that._safe, upsert: true }, function (err,count) {
-            if (err) {
-              that.fail(p, '%s: Update failed on new object %s=%j error %s', that.id(), id, obj, err.message);
-            } else {
-              if (that._safe && count !== 1) {
-                that.fail(p, '%s: Update failed on new object %s=%j count %d', that.id(), id, obj, count);
-              } else {
-                p.resolve();
-              }
-            }
-          });
         });
         return p;
       }
 
-      private ensureExists(oid: utils.uid, proto: any, done: rsvp.Promise, arg: any) {
+      private ensureExists(oid: utils.uid, proto: any, arg: any) : rsvp.Promise{
         var that = this;
 
+        var p = new rsvp.Promise();
         that._logger.debug('STORE', '%s: Checking/inserting for object: %s', that.id(), oid);
         proto._id = utils.toObjectID(oid);
         that._collection.findOne({ _id:  utils.toObjectID(oid) }, function (err, doc) {
           if (err) {
-            that.fail(done, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
+            that.fail(p, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
           } else if (doc === null) {
             that._collection.insert(proto, { safe: true }, function (err, inserted) {
               // Here err maybe be because of a race so we just log it
@@ -824,43 +846,43 @@ module shared {
               } else {
                 that._logger.debug('STORE', '%s: Object %s inserted', that.id(), oid);
               }
-              done.resolve(arg);
+              p.resolve(arg);
             });
           } else {
             that._logger.debug('STORE', '%s: Object %s already exists', that.id(), oid);
-            done.resolve(arg);
+            p.resolve(arg);
           }
         });
+        return p;
       }
 
-      private changeRevAndRef(chainP: rsvp.Promise, oid: utils.uid, revchange: bool, refchange: number) : rsvp.Promise {
+      private changeRevAndRef(oid: utils.uid, revchange: bool, refchange: number) : rsvp.Promise {
         var that = this;
         var p = new rsvp.Promise();
-        chainP.then(function () {
-          that._logger.debug('STORE', '%s: Updating object rev & ref: %s uprev: %s, upref %d', that.id(), oid, revchange, refchange);
-          var revinc = 0;
-          if (revchange) 
-            revinc = 1;
-          that._collection.findAndModify({ _id:  utils.toObjectID(oid) }, [], { $inc: { _rev: revinc, _ref: refchange } }, 
-           { safe: true, remove:false, upsert:false, new:true }, function (err,doc) {
-            if (err) {
-              that.fail(p, '%s: Update failed on object ref for %s error %s', that.id(), oid, err.message);
+
+        that._logger.debug('STORE', '%s: Updating object rev & ref: %s uprev: %s, upref %d', that.id(), oid, revchange, refchange);
+        var revinc = 0;
+        if (revchange) 
+          revinc = 1;
+        that._collection.findAndModify({ _id:  utils.toObjectID(oid) }, [], { $inc: { _rev: revinc, _ref: refchange } }, 
+          { safe: true, remove:false, upsert:false, new:true }, function (err,doc) {
+          if (err) {
+            that.fail(p, '%s: Update failed on object ref for %s error %s', that.id(), oid, err.message);
+          } else {
+            if (doc === null) {
+              that.fail(p, '%s: Update failed on object ref for %s empty doc', that.id(), oid);
             } else {
-              if (doc === null) {
-                that.fail(p, '%s: Update failed on object ref for %s empty doc', that.id(), oid);
-              } else {
-                if (doc._ref === 0) {
-                  that.deleteObject(oid).then(function () {
-                    p.resolve();
-                  }, function (err) {
-                    p.reject(err);
-                  });
-                } else {
+              if (doc._ref === 0) {
+                that.deleteObject(oid).then(function () {
                   p.resolve();
-                }
+                }, function (err) {
+                  p.reject(err);
+                });
+              } else {
+                p.resolve();
               }
             }
-          });
+          }
         });
         return p;
       }
@@ -884,76 +906,66 @@ module shared {
         return p;
       }
 
-      private readProp(chainP: rsvp.Promise, oid: utils.uid, prop:string) : rsvp.Promise {
+      private readProp(oid: utils.uid, prop:string) : rsvp.Promise {
         var that = this;
         var p = new rsvp.Promise();
 
         var fields = {};
         fields['_data.'+prop] = true;
-        chainP.then(function () {
-          that._logger.debug('STORE', '%s: Reading prop for object: %s[%s]', that.id(), oid, prop);
-          that._collection.findOne({ _id:  utils.toObjectID(oid) }, fields, function (err, doc) {
-            if (err) {   
-              that.fail(p, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
-            } else if (doc === null) {
-              that.fail(p, '%s: Object missing in store: %s : %s', that.id(), oid);
-            } else {
-              p.resolve(doc._data[prop]);
-            }
-          });
-        }, function (err) {
-          p.reject(err);
+
+        that._logger.debug('STORE', '%s: Reading prop for object: %s[%s]', that.id(), oid, prop);
+        that._collection.findOne({ _id:  utils.toObjectID(oid) }, fields, function (err, doc) {
+          if (err) {   
+            that.fail(p, '%s: Unable to search collection: %s : %s', that.id(), that._collectionName, err.message);
+          } else if (doc === null) {
+            that.fail(p, '%s: Object missing in store: %s : %s', that.id(), oid);
+          } else {
+            p.resolve(doc._data[prop]);
+          }
         });
         return p;
       }
 
-      private writeProp(chainP: rsvp.Promise, oid: utils.uid, prop:string, value:any) : rsvp.Promise {
+      private writeProp(oid: utils.uid, prop:string, value:any) : rsvp.Promise {
         var that = this;
         var p = new rsvp.Promise();
-        chainP.then(function () {
-          var upd = { _data: {} };
-          if (value instanceof serial.Reference)
-            value = { _id: value.id() };
-          upd._data[prop] = value;
-          that._logger.debug('STORE', '%s: Updating property: %s[%s] %j', that.id(), oid, prop, value);
-          that._collection.update({ _id:  utils.toObjectID(oid) }, { $set: upd }, { safe: that._safe }, function (err,count) {
-            if (err) {
-              that.fail(p, '%s: Update failed on %s[%s] %j error %s', that.id(), oid, prop, value, err.message);
+
+        var upd = { _data: {} };
+        if (value instanceof serial.Reference)
+          value = { _id: value.id() };
+        upd._data[prop] = value;
+        that._logger.debug('STORE', '%s: Updating property: %s[%s] %j', that.id(), oid, prop, value);
+        that._collection.update({ _id:  utils.toObjectID(oid) }, { $set: upd }, { safe: that._safe }, function (err,count) {
+          if (err) {
+            that.fail(p, '%s: Update failed on %s[%s] %j error %s', that.id(), oid, prop, value, err.message);
+          } else {
+            if (that._safe && count !== 1) {
+              that.fail(p, '%s: Update failed on %s[%s] %j count %d', that.id(), oid, prop, value, count);
             } else {
-              if (that._safe && count !== 1) {
-                that.fail(p, '%s: Update failed on %s[%s] %j count %d', that.id(), oid, prop, value, count);
-              } else {
-                p.resolve();
-              }
+              p.resolve();
             }
-          });
-        }, function (err) {
-          p.reject(err);
+          }
         });
         return p;
       }
 
-      private deleteProp(chainP: rsvp.Promise, oid: utils.uid, prop:string) : rsvp.Promise {
+      private deleteProp(oid: utils.uid, prop:string) : rsvp.Promise {
         var that = this;
         var p = new rsvp.Promise();
 
-        chainP.then(function () {
-          var upd = {};
-          upd['_data.'+prop] = '';
-          that._logger.debug('STORE', '%s: Deleting property: %s[%s]', that.id(), oid, prop);
-          that._collection.update({ _id:  utils.toObjectID(oid) }, { $unset: upd }, { safe: that._safe }, function (err,count) {
-            if (err) {
-              that.fail(p, '%s: Deleting failed on %s[%s] error %s', that.id(), oid, prop, err.message);
+        var upd = {};
+        upd['_data.'+prop] = '';
+        that._logger.debug('STORE', '%s: Deleting property: %s[%s]', that.id(), oid, prop);
+        that._collection.update({ _id:  utils.toObjectID(oid) }, { $unset: upd }, { safe: that._safe }, function (err,count) {
+          if (err) {
+            that.fail(p, '%s: Deleting failed on %s[%s] error %s', that.id(), oid, prop, err.message);
+          } else {
+            if (that._safe && count !== 1) {
+              that.fail(p, '%s: Deleting failed on %s[%s] count %d', that.id(), oid, prop, count);
             } else {
-              if (that._safe && count !== 1) {
-                that.fail(p, '%s: Deleting failed on %s[%s] count %d', that.id(), oid, prop, count);
-              } else {
-                p.resolve();
-              }
+              p.resolve();
             }
-          });
-        }, function (err) {
-          p.reject(err);
+          }
         });
         return p;
       }
@@ -988,15 +1000,6 @@ module shared {
         return promise;
       }
 
-      private refreshSet(failed: utils.uid[]): rsvp.Promise {
-        var that = this;
-
-        var fails = [];
-        for (var i = 0; i < failed.length; i++) {
-          fails.push(that.getObject(failed[i]));
-        }
-        return rsvp.all(fails);
-      }
     }
 
     export interface ObjectData {
