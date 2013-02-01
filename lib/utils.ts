@@ -110,6 +110,13 @@ module shared {
       return temp;
     }
 
+    export function clone(obj: any): any {
+      if (isObject(obj))
+        return cloneObject(obj);
+      else
+        return cloneArray(obj);
+    }
+
     // ES5 9.2 
     export function toInteger(val: any) {
       var v = +val;   // toNumber conversion

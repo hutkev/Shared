@@ -11,7 +11,7 @@ if (cluster.isMaster) {
 
   console.log('Options: <workers> <accounts> <transfers>');
   console.log('Creating %s accounts with $1000 each', accounts);
-  store.atomic(function (db) { 
+  store.apply(function (db) { 
     for (var a =0 ; a < accounts; a++) {
       db['account'+a] = { balance : 1000 };
     }
@@ -30,7 +30,7 @@ if (cluster.isMaster) {
     running--;
     console.log('Only %d left running', running);
     if (running === 0) {
-      store.atomic(function (db) {
+      store.apply(function (db) {
         var sum = 0;
         for (var a = 0 ; a < accounts; a++) {
           sum += db['account' + a].balance;
@@ -57,7 +57,7 @@ if (cluster.isMaster) {
     var to = (Math.random() * accounts) >>> 0;
     var amount = (Math.random() * 100) >>> 0;
 
-    store.atomic(function (db) {
+    store.apply(function (db) {
       db['account' + from].balance -= amount;
       db['account' + to].balance += amount;
     }, function (err) {

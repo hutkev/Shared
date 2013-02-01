@@ -20,7 +20,6 @@
 module shared {
   export module tracker {
 
-    var BSON = require('bson');
     var Buffer = require('buffer');
 
     /*
@@ -136,9 +135,8 @@ module shared {
       private _rev;
       private _ref;
       private _type: types.TypeDesc;
-      public _lastTx: number;                 // TODO: Why public?
+      private _lastTx: number;
       private _userdata: any;
-      public toBSON: () => any;
 
       constructor(tc: TrackCache, obj: any, id: utils.uid = utils.UID(), rev?: number) {
         utils.dassert(utils.isObject(tc));
@@ -165,12 +163,6 @@ module shared {
         Object.defineProperty(obj, '_tracker', {
           value: this
         });
-
-        // Add toBSON support, this sadly has to wrap the object
-        // TODO What about GC
-        this.toBSON = function () {
-          return this.bson(obj);
-        }
 
         // Start tracking
         if (obj instanceof Array) {
@@ -256,40 +248,37 @@ module shared {
         return this._ref;
       };
 
+      /*
+       * Set a user supplied data object
+       */
       setData(ud: any) {
         this._userdata = ud;
       }
 
+      /*
+       * Get a user supplied data object
+       */
       getData() : any {
         return this._userdata;
       }
 
-      // Create a fake object for BSON
-      bson(obj: any) {
-        utils.dassert(getTracker(obj) === this);
-
-        var fake :any = {};
-        for (var prop in obj) {
-          // TODO filter properties
-          fake[prop] = obj[prop];
-        }
-        fake._id = new BSON.ObjectId(this.id().toString())
-        fake._rev = this.rev();
-        fake._type = obj.constructor.name;
-        return fake;
-      }
-
       /*
-       * has a change been recorded against the object
+       * Has a change been recorded against the object
        */
       hasChanges() : bool {
         return (this._lastTx != -1);
       }
 
+      /*
+       * The index of the last recorded change in the mtx
+       */
       lastChange(): number {
         return this._lastTx;
       }
 
+      /*
+       * Update the index of the last recorded change in the mtx
+       */
       setLastChange(tx: number): void {
         this._lastTx = tx;
       }

@@ -3,7 +3,7 @@ var store = require('../lib/shared.js').createStore();
 
 if (cluster.isMaster) {
 
-  store.atomic(function (db) { 
+  store.apply(function (db) { 
     // Store init code
   });
 
@@ -11,7 +11,7 @@ if (cluster.isMaster) {
 
 } else {
 
-  store.atomic(function (db) {
+  store.apply(function (db) {
     // Worker action
   }, function (err) {
      // err is null on success

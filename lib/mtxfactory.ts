@@ -159,12 +159,7 @@ module shared {
       }
 
       /*
-       * Return a full mtx record for stored changes. You can call this
-       * multiple times to get new change sets. Each time it is called 
-       * the oject/array states are reset so that only changes since it
-       * was last called are returned. 
-       *
-       * TODO: this whole thing is kludgy, needs better serial
+       * Return the mtx record of stored changes. 
        */
       mtx(cache: ObjectCache) : MTX {
 
@@ -184,6 +179,12 @@ module shared {
       }
 
       okMtx(store: ObjectCache): void {
+        // Reset last change
+        this._mtx.cset.apply(function (ci: ChangeItem) {
+          var t = tracker.getTracker(ci.obj);
+          t.setLastChange(-1);
+        });
+
         this.resetMtx();
       }
 
@@ -355,7 +356,7 @@ module shared {
 
         // First we construct an array of the writes upto the last sort
         // if there was one
-        var at = t._lastTx;
+        var at = t.lastChange();
         var writeset = [];
         while (at !== -1) {
           if (this._mtx.cset.at(at).sort !== undefined) {
@@ -437,7 +438,7 @@ module shared {
           }
         }
         if (pop > 0) {
-          t.addShift(obj, obj.length, (+oldProps[oldProps.length - 1]) - obj.length +1);
+          t.addShift(obj, -1, (+oldProps[oldProps.length - 1]) - obj.length +1);
           while (pop > 0) {
             oldProps.pop();
             pop--;

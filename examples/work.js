@@ -11,7 +11,7 @@ if (cluster.isMaster) {
 
   //require('../lib/shared.js').debug.log('STORE');
 
-  store.atomic(function (db) {
+  store.apply(function (db) {
     db.jobs = [];
     db.results = [];
     for (var a = 0 ; a < jobs; a++) {
@@ -31,7 +31,7 @@ if (cluster.isMaster) {
     running--;
     console.log('Only %d left running', running);
     if (running === 0) {
-      store.atomic(function (db) {
+      store.apply(function (db) {
         return { jobs: db.jobs.length, results: db.results.length };
       }, function (err, res) {
         console.log('The job queue contains %d entries', res.jobs);
@@ -51,12 +51,12 @@ if (cluster.isMaster) {
   }
 
   function doJob() {
-    store.atomic(function (db) {
+    store.apply(function (db) {
       return db.jobs.shift();
     }, function (err, job) {
       if (!err && job !== undefined) {
         var result = fib(job);
-        store.atomic(function (db) {
+        store.apply(function (db) {
           return db.results.push(result);
         });
         done++;

@@ -21,10 +21,12 @@ module shared {
     var CHECKRAND: number = 100;
     var MAXLOCK: number = 10000;
 
+    var lockUID = utils.makeUID('000000000000000000000000');
+
     export class MongoStore implements Store extends mtx.mtxFactory {
       private _logger: utils.Logger = utils.defaultLogger();  
 
-      private _host: string;                                   // Configuration
+      private _host: string;                                    // Configuration
       private _port: number;
       private _dbName: string;                                  
       private _collectionName: string;
@@ -40,13 +42,13 @@ module shared {
 
       private _lockRand: string;                                // For checking for lock changes
 
-      constructor (host?: string = 'localhost', port?: number = 27017, db?: string = 'shared', collection?: string = 'shared') {
+      constructor (options?: any = {}) {
         super();
-        this._host = host;
-        this._port = port;
-        this._dbName = db;
-        this._collectionName = collection;
-        this._safe = false;
+        this._host = options.host || 'localhost';
+        this._port = options.port || 27017;
+        this._dbName = options.db || 'shared';
+        this._collectionName = options.collection || 'shared';
+        this._safe = options.safe || 'false';
 
         this._logger.debug('STORE', '%s: Store created', this.id());
       }
@@ -59,7 +61,7 @@ module shared {
         this.processPending();
       }
 
-      atomic(handler: (store: any) => any, callback?: (error: string, arg: any) => void = function () { }): void {
+      apply(handler: (store: any) => any, callback?: (error: string, arg: any) => void = function () { }): void {
 
         // Queue
         this._pending.push({ handler: handler, callback: callback });
@@ -259,11 +261,11 @@ module shared {
           utils.dassert(this._cache.find(nentry.id) === null);
 
           // Write with 1 ref, but compensate in r&r set
-          var writeObjectFn = (function (_id,_obj,_ref) {
-            return function () {return that.writeObject(_id, _obj, _ref) };
+          var writeObjectFn = (function (_id,_obj) {
+            return function () {return that.writeObject(_id, _obj, 0, 1) };
           });
-          curP = that.wait(curP, writeObjectFn(nentry.id, nentry.obj, 1));
-          var rr: RRData = { uprev: false, ref: -1, };
+          curP = that.wait(curP, writeObjectFn(nentry.id, nentry.obj));
+          var rr: RRData = { uprev: false, ref: -1, reinit: false};
           rrset.insert(nentry.id, rr);
 
           // Time to start tracking changes
@@ -279,28 +281,31 @@ module shared {
           var e = cset.at(i);
           var t = tracker.getTracker(e.obj);
           var id = t.id();
-          var refdata: RefData = t.getData();
+          var tdata: TrackerData = t.getData();
 
           // Record need to up revision, for later 
-          var rr: RRData = rrset.findOrInsert(t.id(), { uprev: true, ref: 0 });
+          var rr: RRData = rrset.findOrInsert(t.id(), { uprev: true, ref: 0, reinit: false });
           rr.uprev = true;
 
           // Write prop
           if (e.write !== undefined) {
+
             // Deref un-loaded value
-            if (utils.isObject(e.last)) {
-              var vid = this.objectID(e.last);
-              var rr: RRData = rrset.findOrInsert(vid, { uprev: true, ref: 0 });
-              rr.ref--;
+            if (utils.isObjectOrArray(e.last)) {
+              var tlast = tracker.getTracker(e.last);
+              var lastrr: RRData = rrset.findOrInsert(tlast.id(), { uprev: true, ref: 0, reinit: false });
+              lastrr.ref--;
+              tdata.rout--;
             }
 
-            // Handle object assignment
+            // Upref if assigning object
             var val = e.value;
-            if (utils.isObject(e.value)) {
+            if (utils.isObjectOrArray(val)) {
               var vid = this.objectID(val);
               val = new serial.Reference(vid);
-              var rr: RRData = rrset.findOrInsert(vid, { uprev: true, ref: 0 });
-              rr.ref++;
+              var valrr: RRData = rrset.findOrInsert(vid, { uprev: true, ref: 0, reinit: false });
+              valrr.ref++;
+              tdata.rout++;
             }
 
             var writePropFn = (function (_id,_write,_val) {
@@ -312,9 +317,8 @@ module shared {
           // Delete Prop
           else if (e.del !== undefined) {
 
-            var t = tracker.getTracker(e.obj);
-            var rd: RefData = t.getData();
-            if (rd.rout > 0) {
+            // Check for outbound to another object
+            if (tdata.rout > 0) {
 
               var readPropFn = (function (_id,_del) {
                 return function () {return that.readProp(_id, _del)};
@@ -325,84 +329,52 @@ module shared {
                 if (utils.isObject(value)) {
                   var vkeys = Object.keys(value);
                   if (vkeys.length === 1 && vkeys[0] === '_id') {
-                    var rr: RRData = rrset.findOrInsert(value._id, { uprev: false, ref: 0 });
-                    rr.ref--;
+                    var valrr: RRData = rrset.findOrInsert(value._id, { uprev: false, ref: 0, reinit: false });
+                    valrr.ref--;
+                    tdata.rout--;
                   }
                 }
               });
             }
 
+            // Remove the prop
             var deletePropFn = (function (_id,_del) {
               return function () {return that.deleteProp(_id, _del)};
             });
             curP = that.wait(curP, deletePropFn(t.id(), e.del));
           }
 
-            /*
-          // Re-init array
-          else if (e.reinit !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-
-            rec.obj.length = 0;
-            serial.readObject(e.reinit, rec.obj);
-          } 
-
-          // Reverse array
-          else if (e.reverse !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
-
-            rec.obj.reverse();
-          } 
-
-          // Shift array
           else if (e.shift !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
+
+            // Handle front pop
+            if (e.shift === 0 || e.shift === -1) {
+              var count = e.size;
+              var front = (e.shift === 0);
+
+              var arrayPopFn = (function (_id, _front) {
+                return function () { return that.arrayPop(_id, _front) };
+              });
+
+              while (count--) {
+                curP = that.wait(curP, arrayPopFn(id, front));
+              }
+            } else {
+              // Need a re-init
+              rr.reinit = true;
             }
-
-            rec.obj.splice(e.shift,e.size);
-          } 
-
-          // Unshift array
+          }  
+          
           else if (e.unshift !== undefined) {
-            var rec = this._ostore.find(e.id);
-            if (rec === null)
-              this._logger.fatal('%s: cset contains unknown object', e.id);
-            if (!utils.isArray(rec.obj))
-              this._logger.fatal('%s: cset re-init on non-array', e.id);
-            if (!wset.has(e.id)) {
-              wset.put(e.id);
-              rec.obj._tracker._rev++;
-            }
+            rr.reinit = true;
+          }
 
-            var args = [e.unshift,0];
-            for (var j = 0 ; j < e.size; j++)
-              args.push(undefined);
-            Array.prototype.splice.apply(rec.obj, args);
-          } 
-          */
+          else if (e.reinit !== undefined) {
+            rr.reinit = true;
+          }
+
+          else if (e.reverse !== undefined) {
+            rr.reinit = true;
+          }
 
           else {
             this._logger.fatal('%s: cset contains unexpected command', t.id());
@@ -415,8 +387,22 @@ module shared {
           var done = new rsvp.Promise();
           done.resolve();
 
-          rrset.apply(function (id: utils.uid, rr: RRData) {
-            if (rr.uprev || rr.ref !== 0) {
+          rrset.apply(function (lid: utils.uid, rr: RRData) {
+
+            if (rr.reinit) {
+              // Worst case, have to write whole object again
+              var reobj = that._cache.find(lid);
+              var ret = tracker.getTracker(reobj);
+              var ltdata: TrackerData = ret.getData();
+
+              var writeObjectFn = (function (_id,_obj,_rev,_ref) {
+                return function () {return that.writeObject(_id, _obj, _rev, _ref) };
+              });
+
+              done = that.wait(done, writeObjectFn(lid, reobj, ret.rev(), ltdata.rin+rr.ref));
+
+            } else if (rr.uprev || rr.ref !== 0) {
+              // Just ref & rev changes to do
               var changeRevAndRefFn = (function (_id,_uprev,_ref) {
                 return function () {return that.changeRevAndRef(_id, _uprev, _ref) };
               });
@@ -773,8 +759,8 @@ module shared {
                   t.setRev(rec.rev);
                   t.retrack(rec.obj);
                 }
-                var rd : RefData = { rin: rec.ref, rout: rec.out };
-                t.setData(rd);
+                var tdata : TrackerData = { rout: rec.out, rin: doc._ref };
+                t.setData(tdata);
 
                 // Catch root update
                 if (t.id().toString() === rootUID.toString()) {
@@ -800,13 +786,13 @@ module shared {
         return rsvp.all(fails);
       }
 
-      private writeObject(oid:utils.uid, obj:any, ref:number) : rsvp.Promise {
-        utils.dassert(utils.isValue(oid) && utils.isValue(obj));
+      private writeObject(oid:utils.uid, obj:any, rev:number, ref:number) : rsvp.Promise {
+        utils.dassert(utils.isValue(oid) && utils.isObjectOrArray(obj));
         var that = this;
 
         // Prep a copy for upload
         var fake : any = {};
-        fake._data = utils.cloneObject(obj);
+        fake._data = utils.clone(obj);
         var keys = Object.keys(obj);
         for (var k = 0; k < keys.length; k++) {
           if (utils.isObjectOrArray(obj[keys[k]])) {
@@ -815,7 +801,7 @@ module shared {
           }
         }
         fake._id = utils.toObjectID(oid);  
-        fake._rev = 0;
+        fake._rev = rev;
         fake._ref = ref;
         fake._type = utils.isObject(obj)?'Object':'Array';
 
@@ -977,6 +963,31 @@ module shared {
         return p;
       }
 
+      private arrayPop(oid: utils.uid, front: bool) : rsvp.Promise {
+        var that = this;
+        var p = new rsvp.Promise();
+
+        var arg = 1;
+        var name = 'back';
+        if (front) {
+          arg = -1;
+          name = 'front';
+        }
+        that._logger.debug('STORE', '%s: Array pop: %s[%s]', that.id(), oid, name);
+        that._collection.update({ _id: utils.toObjectID(oid) }, { $pop: { _data: arg } }, { safe: that._safe }, function (err,count) {
+          if (err) {
+            that.fail(p, '%s: Array pop failed on %s[%s] error %s', that.id(), oid, name, err.message);
+          } else {
+            if (that._safe && count !== 1) {
+              that.fail(p, '%s: Array pop failed on %s[%s] count %d', that.id(), oid, name, count);
+            } else {
+              p.resolve();
+            }
+          }
+        });
+        return p;
+      }
+
       private checkReadset(rset: mtx.ReadMap) : rsvp.Promise {
         this._logger.debug('STORE', '%s: checkReadset(%d)', this.id(), rset.size());
         var that = this;
@@ -1017,14 +1028,15 @@ module shared {
       out: number;
     }
 
-    export interface RefData {
-      rin: number;
+    export interface TrackerData {
       rout: number;
+      rin: number;
     }
 
     export interface RRData {
       uprev: bool;
       ref: number;
+      reinit: bool;
     }
 
   } // store

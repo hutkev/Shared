@@ -230,19 +230,19 @@ module shared {
         this._queue.apply(function (item:ChangeItem) {
           str += tracker.getTracker(item.obj).id();
           str += ' '
-          if (item.write) {
+          if (item.write !== undefined) {
             str += 'write ' + item.write + ' = ' + JSON.stringify(item.value);
-            if (item.last)
+            if (item.last !== undefined)
               str += ' last ' + JSON.stringify(item.last);
-          } else if (item.del) {
+          } else if (item.del !== undefined) {
             str += 'delete ' + item.del;
-          } else if (item.reinit) {
+          } else if (item.reinit !== undefined) {
             str += 'reinit ' + item.reinit;
-          } else if (item.reverse) {
+          } else if (item.reverse !== undefined) {
             str += 'reverse';
-          } else if (item.shift) {
+          } else if (item.shift !== undefined) {
             str += 'shift ' + item.shift + ' by ' + item.size;
-          } else if (item.unshift) {
+          } else if (item.unshift !== undefined) {
             str += 'unshift ' + item.unshift + ' by ' + item.size;
           } else {
             str += '**UNKNOWN** ' + JSON.stringify(item);

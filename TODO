@@ -1,11 +1,10 @@
 
-Outgoing edge count
-Arrays
-BSON Self Reference
+Invalidate Store Cache
 
 Next Version
 ============
-Performance Profile
+Profile performance
 Object split control
-GC Cyclic References
+GC for cyclic references
 Triggers
+Large Array Spliting

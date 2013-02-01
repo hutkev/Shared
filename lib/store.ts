@@ -9,21 +9,20 @@
 module shared {
   export module store {
 
-    export var lockUID = utils.makeUID('000000000000000000000000');
     export var rootUID = utils.makeUID('000000000000000000000001');
 
     /*
      * Create a new store, this always has to be a secondary at the moment
      * to allow for undo actions.
      */
-    export function createStore(host?: string, port?:number, db?: string, collection?: string): Store {
-      return new MongoStore(host, port, db, collection);
+    export function createStore(options:any): Store {
+      return new MongoStore(options);
     }
 
     export interface Store  {
       close(): void;
 
-      atomic(handler: (store: any) => any , callback?: (error: string, arg: any) => void ): void;
+      apply(handler: (store: any) => any , callback?: (error: string, arg: any) => void ): void;
 
     }
 

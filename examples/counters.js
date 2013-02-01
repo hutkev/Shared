@@ -8,7 +8,7 @@ if (cluster.isMaster) {
   var workers = parseInt(process.argv[2]) || 1;
   var count = ((parseInt(process.argv[3]) || 10000) / workers) >>> 0;
   console.log('Creating counter(s) of size %s for %s worker(s) to decrement', count, workers);
-  store.atomic(function (db) { 
+  store.apply(function (db) { 
     for (var w =0 ; w<workers; w++) {
       if (db['worker'+w] === undefined)
         db['worker'+w] = { counter : count };
@@ -30,7 +30,7 @@ if (cluster.isMaster) {
     console.log('worker ' + worker.process.pid + ' died');
     running--;
     if (running === 0) {
-      store.atomic(function (db) {
+      store.apply(function (db) {
         for (var w = 0 ; w < workers; w++) 
           console.log('Worker %s has counted down to %s', w, db['worker'+w].counter);
       }, function (err, count) {
@@ -46,7 +46,7 @@ if (cluster.isMaster) {
   var worker = 'worker' + (cluster.worker.id - 1);
 
   function decOne() {
-    store.atomic(function (db) {
+    store.apply(function (db) {
       db[worker].counter -= 1;
       return db[worker].counter > 0;
     }, function (err,more) {
