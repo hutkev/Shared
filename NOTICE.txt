@@ -1,0 +1,4 @@
+Hut78 Shared
+Copyright 2013 Kevin Jones
+
+This product includes software developed by Kevin Jones (@hutkev).
