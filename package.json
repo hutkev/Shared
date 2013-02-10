@@ -1,7 +1,7 @@
 {
   "name": "shared",
-  "version": "0.1.0dev1",
-  "description": "Cluster wide shared objects with atomic updates",
+  "version": "0.2.0",
+  "description": "Shared objects over MongoDB",
   "main": "lib/shared.js",
   "directories": {
     "test": "tests"
@@ -9,7 +9,9 @@
   "dependencies": {
     "bintrees": "~0.0.7",
     "node-uuid": "~1.3.3",
-    "underscore": "~1.4.0"
+    "underscore": "~1.4.0",
+    "bson": "~0.1.5",
+    "mongodb": "~1.2.9"
   },
   "devDependencies": {},
   "scripts": {
@@ -17,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "http://github.com/hut78/shared.git"
+    "url": "http://github.com/hutkev/shared.git"
   },
   "keywords": [
     "Cluster",
