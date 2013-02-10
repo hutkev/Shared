@@ -71,12 +71,14 @@ Restrictions
 
 
 Performance Considerations
+--------------------------
 
 * This version is not tuned for performance, expect odd results if benchmarking.
 
 * Array handling in MongoDB is rather limited. Push, pop & shift operations should perform well but anything involving slicing, sorting, reversing or unshifting will perform badly on large arrays.
 
 Examples
+--------
 The distribution includes some examples you may want to review:
 
 Counters – A simple count down example where multiple workers each decrement their own counter in the store until it reaches 0.
@@ -84,6 +86,24 @@ Bank – A bank account money transfer simulation. A set of workers performs a s
 Work – Workers pull requests to computer Fibonacci numbers from a simple shared queue and post their results on a second queue.
 
 License & Source
+----------------
 The code is licensed under the Apache License 2.0.
 
 The original source is written in TypeScript. The distribution you receive may only contain JavaScript derived from this while the library is being developed.
+
+Dependancies
+------------
+
+The version of rsvp in node_modules has been modified slightly for better exception handling. All other dependancies are unchanged.
+
+
+Todo
+----
+
+GC Store Cache based on timestamp
+Profile performance
+API for controlling object splits
+GC for stored cyclic references
+Triggers/Events
+Large array handling
+
