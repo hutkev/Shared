@@ -16,7 +16,7 @@ Shared is an interface for managing shared objects. In this version the only sup
         // Error handling
     });
     
-To make changes to shared objects you call *apply* on a *store*. Your closure is passed a *db* object which is the (initially empty) root object of a graph of nodes that you can create to store whatever data.
+To make changes to shared objects you call *apply* on a *store*. Your callback is passed a *db* object which is the (initially empty) root object of a graph of nodes that you can create to store whatever data.
 
 When *apply* invokes the callbacks your changes will have been committed to the store (and in this version to MongoDB) to allow others to see them. Applying changes is atomic, either they are all applied or none are. 
 
@@ -44,11 +44,11 @@ If you don't close the stores then your process will not exit.
 Side effects
 ------------
 
-Shared performs updates optimistically on a locally cached version of the shared objects. If it is later determined that the cache is out of date with respect to the data stored in MongoDB your closure will be re-run. 
+Shared performs updates optimistically on a locally cached version of the shared objects. If it is later determined that the cache is out of date with respect to the data stored in MongoDB your callback will be re-run. 
 
-This means you should be careful to avoid writing code that has side effects in a closure, such as logging to the console. The way to handle this is by returning a value from the closure which will be passed to the second argument of the error callback.
+This means you should be careful to avoid writing code that has side effects in a callback, such as logging to the console. The way to handle this is by returning a value from the callback which will be passed to the second argument of the error callback.
 
-  store.apply(function(db) {
+    store.apply(function(db) {
       return db.current;
     }, function(err, ret) {
         console.log('Balance is ' + ret);
@@ -57,7 +57,7 @@ This means you should be careful to avoid writing code that has side effects in 
 Exceptions
 ----------
 
-Exceptions thrown in the apply closure are caught automatically and passed as the error object of the callback closure if one has been provided. Any changes made prior to an exception been thrown will not be committed and so exceptions provide a way to terminate an operation abnormally.   
+Exceptions thrown within the apply are caught automatically and passed to the error callback, if one has been provided. Any changes made prior to an exception been thrown will not be committed and so exceptions provide a way to terminate an operation abnormally.   
 
 Restrictions
 ------------
