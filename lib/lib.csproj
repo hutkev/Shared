@@ -24,7 +24,7 @@
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
   <PropertyGroup>
-    <RootNamespace>tshared</RootNamespace>
+    <RootNamespace>shared</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <TypeScriptCompile Include="mongo.ts" />
@@ -39,11 +39,7 @@
     <TypeScriptCompile Include="debug.ts" />
     <TypeScriptCompile Include="tracker.ts" />
     <TypeScriptCompile Include="utils.ts" />
-  </ItemGroup>
-  <ItemGroup>
     <TypeScriptCompile Include="store.ts" />
-  </ItemGroup>
-  <ItemGroup>
     <TypeScriptCompile Include="mtxfactory.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
@@ -55,9 +51,9 @@
         <WebProjectProperties>
           <UseIIS>True</UseIIS>
           <AutoAssignPort>True</AutoAssignPort>
-          <DevelopmentServerPort>0</DevelopmentServerPort>
+          <DevelopmentServerPort>51648</DevelopmentServerPort>
           <DevelopmentServerVPath>/</DevelopmentServerVPath>
-          <IISUrl>http://localhost:49394/</IISUrl>
+          <IISUrl>http://localhost:51635/</IISUrl>
           <NTLMAuthentication>False</NTLMAuthentication>
           <UseCustomServer>False</UseCustomServer>
           <CustomServerUrl>
@@ -67,7 +63,17 @@
       </FlavorProperties>
     </VisualStudio>
   </ProjectExtensions>
-  <Target Name="BeforeBuild">
-    <Exec Command="&quot;$(PROGRAMFILES)\Microsoft SDKs\TypeScript\0.8.0.0\tsc&quot; -nolib -c --declarations --out shared.js @(TypeScriptCompile ->'&quot;%(fullpath)&quot;', ' ')" />
-  </Target>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <TypeScriptTarget>ES5</TypeScriptTarget>
+    <TypeScriptIncludeComments>true</TypeScriptIncludeComments>
+    <TypeScriptSourceMap>true</TypeScriptSourceMap>
+    <TypeScriptOutFile>shared.js -nolib --declaration</TypeScriptOutFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <TypeScriptTarget>ES5</TypeScriptTarget>
+    <TypeScriptIncludeComments>true</TypeScriptIncludeComments>
+    <TypeScriptSourceMap>true</TypeScriptSourceMap>
+    <TypeScriptOutFile>shared.js -nolib --declaration</TypeScriptOutFile>
+  </PropertyGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\TypeScript\Microsoft.TypeScript.targets" />
 </Project>

@@ -44,6 +44,7 @@ module shared {
           str += ' '
           str += value;
           str += '\n';
+          return true;
         });
         return str;
       }

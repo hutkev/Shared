@@ -996,6 +996,7 @@ module shared {
         var fails = [];
         rset.apply(function (oid, rev) {
           fails.push(that.revisionCheck(oid, rev));
+          return true;
         });
         return rsvp.all(fails);
       }
