@@ -6,7 +6,6 @@
  *
  * Assumes MongoDB is running on localhost on default port
  */
-
 var cluster = require('cluster');
 var shared = require('../lib/shared.js');
 
@@ -33,6 +32,7 @@ if (cluster.isMaster) {
         db['worker'+w].counter = count;
     }
   }, function (err) {
+    if (err) console.trace(err);
 
     // Start the workers going
     console.log('Forking workers...');

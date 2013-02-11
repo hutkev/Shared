@@ -61,7 +61,6 @@
   <ItemGroup>
     <Content Include="bank.js" />
     <Content Include="counters.js" />
-    <Content Include="ncounters.js" />
     <Content Include="template.js" />
     <Content Include="work.js" />
   </ItemGroup>

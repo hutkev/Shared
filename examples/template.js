@@ -1,3 +1,9 @@
+/*
+ * Basic tempate for cluster examples
+ *
+ * Assumes MongoDB is running on localhost on default port
+ */
+
 var cluster = require('cluster');
 var store = require('../lib/shared.js').createStore();
 

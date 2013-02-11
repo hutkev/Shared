@@ -292,8 +292,8 @@ module shared {
 
             // Deref un-loaded value
             if (utils.isObjectOrArray(e.last)) {
-              var tlast = tracker.getTracker(e.last);
-              var lastrr: RRData = rrset.findOrInsert(tlast.id(), { uprev: true, ref: 0, reinit: false });
+              var vid = this.objectID(e.last);
+              var lastrr: RRData = rrset.findOrInsert(vid, { uprev: true, ref: 0, reinit: false });
               lastrr.ref--;
               tdata.rout--;
             }
