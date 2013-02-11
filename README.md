@@ -100,10 +100,10 @@ The version of rsvp in node_modules has been modified slightly for better except
 Todo
 ----
 
-GC Store Cache based on timestamp
-Profile performance
-API for controlling object splits
-GC for stored cyclic references
-Triggers/Events
-Large array handling
+* GC Store Cache based on timestamp
+* Profile performance
+* API for controlling object splits
+* GC for stored cyclic references
+* Triggers/Events
+* Large array handling
 

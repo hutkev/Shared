@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>reveal.js - The HTML Presentation Framework</title>
+
+		<meta name="description" content="A framework for easily creating beautiful presentations using HTML">
+		<meta name="author" content="Hakim El Hattab">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<link rel="stylesheet" href="css/reveal.min.css">
+		<link rel="stylesheet" href="css/theme/default.css" id="theme">
+
+		<!-- For syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- If the query includes 'print-pdf', use the PDF print sheet -->
+		<script>
+			document.write( '<link rel="stylesheet" href="css/print/' + ( window.location.search.match( /print-pdf/gi ) ? 'pdf' : 'paper' ) + '.css" type="text/css" media="print">' );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+<div class="slides">
+    <section>
+        <h1>Objects are the api, stupid!</h1>
+        <p>@hutkev</p>
+        <p>Feb 2013</p>
+    </section>
+    <section>
+        <h2>API Design</h2>
+        <div>
+            <div>I was in a hotel where they had three little bottles on the counter. One was named "Shine," and one was named "Smooth," and one was named something else. One of them was hand lotion, one was soap, and one was shampoo. It was a puzzle-solving exercise to figure out which was which. They are indulging the designer's own desire to be creative, rather than trying to figure out, Okay, how can I make this as easy for the user as possible? I don't want to use my creative energy on somebody else's user interface.</div>
+            <div>&nbsp;</div>
+            <div>Jeff Bezos</div>
+        </div>
+    </section>
+    <section>
+        <h2>On a promise...</h2>
+<pre>// Promises/A
+interface Promise {<br>  then(
+    callback: (value:any) -&gt; void,&nbsp;<br>    errback?: (err:any) -&gt; void)&nbsp;<br>  )&nbsp;: Promise
+  resolve(value: any) : void
+  reject(value: any) : void<br>}<br>
+
+// Underlying abstraction
+interface Event {<br>  value: any;                      // One time set, multiple get<br>  next: (event: Event) -&gt; void;    // Stack the callbacks
+}</pre>
+<h3>
+    <span style="letter-spacing: -0.02em;"><br />Minimising surface area often improves comprehension<br>
+        </span>However, usually requires more internals</h3>
+</section>
+    <section>
+        <h2>When it gets really messy</h2>
+        <h2>
+            <img src="drawing.png">
+            <br>
+        </h2>
+    </section>
+    <section>
+        <h2>What's in a Proxy?</h2>
+            <pre>var tester = new Tester()
+var obj = Proxy.create(new ForwardHandler(tester))<br>
+interface Handler /* harmony:proxies style */{
+  defineProperty(name: string, desc: PropertyDescriptor): void;
+  delete (name: string): bool;
+
+  getPropertyNames(name: string): string[];
+  getOwnPropertyNames(name: string): string[];
+  getOwnPropertyDescriptor(name: string): PropertyDescriptor;
+  getPropertyDescriptor(name: string): PropertyDescriptor;
+}
+</pre>
+    </section>
+    <section>
+        <h2>Virtual Properties</h2>
+        <div>
+            <pre>Handler:</pre>
+            <pre>  addProperty(name: string, writeCB: (any) =&gt; void ) {<br>&nbsp; &nbsp; var that = this;<br>&nbsp; &nbsp; var desc: PropertyDescriptor = {<br>&nbsp; &nbsp; &nbsp; get: function () {<br>&nbsp; &nbsp; &nbsp; &nbsp; return that.props[name].value;<br>&nbsp; &nbsp; &nbsp; },<br>&nbsp; &nbsp; &nbsp; set: function(value) {<br>&nbsp; &nbsp; &nbsp; &nbsp; writeCB(value);<br>&nbsp; &nbsp; &nbsp; &nbsp; that.props[name].value = value;<br>&nbsp; &nbsp; &nbsp; }<br>&nbsp; &nbsp; }<br>&nbsp; &nbsp; this.props[name] = { value: null, pd: desc };<br>&nbsp; }</pre>
+            <pre>My Object:</pre>
+            <pre>  constructor () {
+    this.handler = new VirtualHandler(this);
+    this.handler.addProperty("foo", function (value) {
+      console.log('New foo: ' + value);
+    });
+    <b>return Proxy.create(this.handler,this);</b>
+  }</pre>
+        </div>
+    </section>
+    <section>
+        <h2>Proxy Support (ES6)</h2>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">Node supports:</span>
+            <br>
+        </div>
+        <div><a href="http://wiki.ecmascript.org/doku.php?id=harmony:proxies">http://wiki.ecmascript.org/doku.php?id=harmony:proxies</a><br>
+        </div>
+        <div>
+            <br>
+        </div>
+        <div>Newer version</div>
+        <div><a href="http://wiki.ecmascript.org/doku.php?id=direct_proxies">http://wiki.ecmascript.org/doku.php?id=direct_proxies</a><br>
+        </div>
+        <div>
+            <br>
+        </div>
+        <div>Compatibility Shim</div>
+        <div><a href="https://github.com/tvcutsem/harmony-reflect">https://github.com/tvcutsem/harmony-reflect</a><br>
+        </div>
+        <div>Firefox 4 -&nbsp;<span style="line-height: 1.2em;letter-spacing: -0.02em;">Chrome 19 -&nbsp;</span>
+        <span style="line-height: 1.2em;letter-spacing: -0.02em;">node v0.7.8</span>
+    </div>
+    <div>
+        <br>
+    </div>
+    <h3><span style="letter-spacing: -0.02em;">Need to work hard to be transparent &amp; composable<br>
+            </span>Synchronous by default makes this rather difficult</h3>
+        </section>
+    <section>
+        <h3>
+            <span style="font-size: 1.55em;letter-spacing: -0.03em;line-height: 0.9em;">Object.observe </span>
+            <span style="font-size: 1.55em;letter-spacing: normal;line-height: 55.796875px;">(ES7)</span>
+        </h3>
+        <div>Observe object without changing it</div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">Chrome Canary has test implementation</span>
+            <br>
+        </div>
+        <div>
+            <br>
+        </div>
+        <pre>obj = {a:0};<br>Object.observe(obj, function(record) {<br>  console.log(record);<br>});</pre>
+        <pre>
+            <br>obj.a = 1    // {type: 'updated', object: obj, name: 'a', oldValue: 1}<br>obj.b = true // {type: 'new', object: obj, name: 'b' }<br>delete obj.b // {type: 'delete', object: obj, name: 'b'} 
+        </pre>
+<h3><span style="letter-spacing: -0.02em;"><br />Array slices are supported - read notifications are not<br>
+        </span>Change notifications are asynchronous</h3>
+    </section>
+    <section>
+        <h2>Why?</h2>
+        <div>
+            <br>
+        </div>
+        <div>
+            <div style="">
+                <span style="letter-spacing: -0.02em;">MVC internals - Remove dirty checking</span>
+            </div>
+            <div style="">
+                <span style="letter-spacing: -0.02em;">Automatic&nbsp;Persistence - Make it possible</span>
+            </div>
+            <div style="">
+                <span style="letter-spacing: -0.02em;">Form Constraints - Abstract them</span>
+            </div>
+            <div style="">
+                <span style="letter-spacing: -0.03em;line-height: 0.9em;">Really just simpler APIs from observing</span>
+                <br>
+            </div>
+        </div>
+        <div style="">
+            <span style="letter-spacing: -0.03em;line-height: 0.9em;">
+                <br>
+            </span>
+        </div>
+        <div style="">
+            <span style="letter-spacing: -0.03em;line-height: 0.9em;">
+                <br>
+            </span>
+        </div>
+        <h3>Instead of Proxies?</h3>
+        <div>
+            <span style="letter-spacing: -0.03em;">You can simulate observe with proxies</span>
+            <br>
+        </div>
+        <div>
+            <span style="letter-spacing: -0.03em;">Proxies are more flexible, but fairly dangerous</span>
+        </div>
+        <div>
+            <span style="letter-spacing: -0.03em;">Proxies require a lot more code</span>
+        </div>
+        <div>
+            <span style="letter-spacing: -0.03em;">Observe is object identity safe</span>
+        </div>
+        <div>
+            <span style="letter-spacing: -0.03em;">Caches need read notifications of proxies</span>
+        </div>
+        <div>
+            <br>
+        </div>
+        <div>
+            <br>
+        </div>
+        <div>
+            <br>
+        </div>
+    </section>
+    <section>
+        <h2>Give me cake now!<img src="cake.jpg" style="line-height: 1.2em;font-size: 30.0px;letter-spacing: -0.02em;">
+        </h2>
+    </section>
+    <section>
+        <h2>Shared 0.2.0</h2>
+        <div>
+            <span style="letter-spacing: -0.02em; line-height: 1.2em;">An object sharing layer (using persistence)</span>
+        </div>
+        <div>
+            <br>
+        </div>
+        <pre>
+var shared = require('shared')
+var store = shared.createStore({host: 'mongohost'});
+            </pre>
+        <pre>
+store.apply(function(db) {
+  if (db.counter === undefined)
+    db.counter = 0;
+  else
+    db.counter++;
+}, function(err) {
+   // Error handle
+});
+</pre>
+        <p>
+            <span style="line-height: 1.2em; letter-spacing: -0.02em;">
+                <br>
+                Each object is one document in MongoDB
+  <br>
+                References link objects in the DB
+  <br>
+                Garbage collection cleans dead objects up as needed
+            </span>
+        </p>
+    </section>
+<section>
+    <h2>Design</h2>
+    <div>
+        <br>
+    </div>
+    <div>Direct manipulation requires local caching of objects</div>
+    <div>The cache is garbage collected speratly from the database</div>
+    <div>
+        <br>
+    </div>
+    <div>apply() creates an operation set (observer style)</div>
+    <div>Uses handcrafted proxy code + dirty checking today</div>
+    <div>Native array ops hard to code but important for efficiency</div>
+    <div>
+        <br>
+    </div>
+    <div>Operation set translated into micro-transaction</div>
+    <div>readset - newset - changeset</div>
+    <div>Micro-transaction only commits if readset was current</div>
+    <div>Commit is a locked update, everything or nothing</div>
+    <div>Re-try on failure, watch for unintended side effects!</div>
+</section>
+<section>
+    <h2 style="text-align: center;">Work queue</h2>
+    <pre>
+function push(queue, item, cb) {
+  store.apply(function(db) {
+    if (db[queue] === undefined)
+      db.queue = [];
+    db.queue.push(item);
+  }, function (err) {
+    cb(err)
+  }
+}
+        
+function pop(queue, cb) {
+  store.apply(function (db) {
+  if (db[queue] !== undefined)
+    return db[queue].shift();
+  else
+    return null;
+  }, function (err, ret) {
+    cb(err, ret);
+  });
+}</pre> 
+
+<div>
+    <div style="text-align: center;">Sometimes beware Array op efficiency</div>
+</div>
+
+</section>
+    <section>
+        <h2>Things to do</h2>
+        <div>
+            <br>
+        </div>
+        <div>Cache overloading for large objects --</div>
+        <div>Best practices and/or partial object caching</div>
+        <div>
+            <br>
+        </div>
+        <div>Document stores vs Object Store --</div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">Granularity of update instructions</span>
+        </div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">Advanced feature support</span>
+        </div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">
+                <br>
+            </span>
+        </div>
+        <div>Event emitting/triggers</div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">Query capability&nbsp;</span>
+        </div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">Stored procedures</span>
+        </div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">Housekeeping - Store Garbage Collection</span>
+        </div>
+        <div>
+            <span style="line-height: 1.2em;letter-spacing: -0.02em;">&nbsp;&nbsp;</span>
+        </div>
+    </section>
+    <section>
+        <h2>Thanks</h2>
+        <div>
+            <br>
+        </div>
+        <div>@hutkev</div>
+        <div>http://github.com/hutkev</div>
+    </section>
+</div>
+
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.min.js"></script>
+
+		<script>
+
+			// Full list of configuration options available here:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+				transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+
+				// Optional libraries used to extend on reveal.js
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/showdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+					{ src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+					// { src: 'plugin/remotes/remotes.js', async: true, condition: function() { return !!document.body.classList; } }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>
