@@ -60,6 +60,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="bank.js" />
+    <Content Include="clean.js" />
     <Content Include="counters.js" />
     <Content Include="template.js" />
     <Content Include="work.js" />

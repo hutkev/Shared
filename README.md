@@ -62,9 +62,9 @@ Exceptions thrown within the apply are caught automatically and passed to the er
 Restrictions
 ------------
 
-* Do not leak objects from the apply closure, the objects must only be accessed from within an atomic block.
+* Do not leak objects from the apply closure, the objects must only be accessed from within your callback.
 * Do not rely on an objects prototype. Objects may be constructed with 'new'   but the prototype of an object is not recorded so it will become a plain old object after the changes are committed.
-* Do not define getter/setter methods on objects, these are used in parts of the implementation and will cause the atomic code to break.
+* Do not define getter/setter methods on objects, these are used in parts of the implementation and will cause things to break.
 * Avoid assigning functions to object properties, these are currently silently ignored.
 * Date types may be used but they are currently mapped to Strings during a commit.
 * In this version avoid excessive growth of the data graph. The library requires a garbage collector to recover dead objects from its own data structures and this is not fully implemented. 
@@ -74,16 +74,15 @@ Performance Considerations
 --------------------------
 
 * This version is not tuned for performance, expect odd results if benchmarking.
-
 * Array handling in MongoDB is rather limited. Push, pop & shift operations should perform well but anything involving slicing, sorting, reversing or unshifting will perform badly on large arrays.
 
 Examples
 --------
 The distribution includes some examples you may want to review:
 
-Counters – A simple count down example where multiple workers each decrement their own counter in the store until it reaches 0.
-Bank – A bank account money transfer simulation. A set of workers performs a set number of transfers between randomly selected accounts. Success is not losing any of the money!  
-Work – Workers pull requests to computer Fibonacci numbers from a simple shared queue and post their results on a second queue.
+* Counters – A simple count down example where multiple workers each decrement their own counter in the store until it reaches 0.
+* Bank – A bank account money transfer simulation. A set of workers performs a set number of transfers between randomly selected accounts. Success is not losing any of the money!  
+* Work – Workers pull requests to computer Fibonacci numbers from a simple shared queue and post their results on a second queue.
 
 License & Source
 ----------------

@@ -74,12 +74,10 @@ class VirtualHandler implements HandlerIF {
 
   getOwnPropertyDescriptor(name: string) : PropertyDescriptor {
     var that = this;
-    console.log('desc0');
 
     if (this.props[name] !== undefined) {
       return that.props[name].pd;
     } else {
-      console.log('desc1');
       var desc = Object.getOwnPropertyDescriptor(this.delegate, name);
       if (desc !== undefined) desc.configurable = true;
       return desc;
@@ -87,7 +85,6 @@ class VirtualHandler implements HandlerIF {
   }
 
   getPropertyDescriptor(name: string) : PropertyDescriptor {
-    console.log('desc2');
     var getPropertyDescriptor = function (obj, name) {
       if (obj === null) return undefined;
       var desc = Object.getOwnPropertyDescriptor(obj, name);
@@ -110,6 +107,8 @@ class VirtualHandler implements HandlerIF {
   }
 }
 
+/* ==================================================================== */
+
 class Tester {
   private handler : VirtualHandler;
 
@@ -124,26 +123,4 @@ class Tester {
 
 var tester = new Tester()
 tester.foo = 1;
-
-
-function push(queue, item, cb) {
-  store.apply(function(db) {
-    if (db[queue] === undefined)
-      db.queue = [];
-    db.queue.push(item);
-  }, function (err) {
-    cb(err)
-  }
-}
-
-function pop(queue, cb) {
-  store.apply(function (db) {
-    if (db[queue] !== undefined)
-      return db[queue].shift();
-    else
-      return null;
-  }, function (err, ret) {
-    cb(err, ret);
-  });
-}
-    
+   
