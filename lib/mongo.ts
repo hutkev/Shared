@@ -406,7 +406,7 @@ module shared {
               var changeRevAndRefFn = (function (_id,_uprev,_ref) {
                 return function () {return that.changeRevAndRef(_id, _uprev, _ref) };
               });
-              done = that.wait(done, changeRevAndRefFn(id, rr.uprev, rr.ref));
+              done = that.wait(done, changeRevAndRefFn(lid, rr.uprev, rr.ref));
             }
           });
 
@@ -473,6 +473,8 @@ module shared {
           this._logger.fatal('%s: Unexpected document type: %j', this.id(), doc._type);
         }
 
+        this.disable++;
+
         // Read props
         var dkeys = Object.keys(doc._data);
         var dk = 0;
@@ -509,6 +511,8 @@ module shared {
           proto[prop] = val;
           dk++;
         }
+
+        this.disable--;
         return { obj: proto, id: doc._id, rev: doc._rev, ref: doc._ref, out: out };
       }
 
@@ -1013,7 +1017,7 @@ module shared {
             if (num === 1)
               promise.resolve(null);
             else
-              promise.resolve(oid.toString());
+              promise.resolve(oid);
           }
         });
         return promise;

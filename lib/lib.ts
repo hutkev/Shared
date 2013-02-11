@@ -18,9 +18,8 @@ exports.version = function () {
 }
 
 exports.info = function () {
-  return 'hut78-shared ' + ver + ' Copyright(c) Kevin Jones';
+  return 'Shared ' + ver + ' Copyright(c) Kevin Jones @hutkev';
 }
-
 
 exports.createStore = shared.store.createStore;
 
