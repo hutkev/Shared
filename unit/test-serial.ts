@@ -188,8 +188,8 @@ module testserial {
     test.ok(serial.writeObject(rh, [ a, a ]) == '[\"0\":<'+a._id.toString()+'>,\"1\":<'+a._id.toString()+'>]');
     test.ok(serial.writeObject(rh, [ b ]) == '[\"0\":<'+b._id.toString()+'>]');
     test.ok(serial.writeObject(rh, [ b, b ]) == '[\"0\":<'+b._id.toString()+'>,\"1\":<'+b._id.toString()+'>]');
-    test.ok(utils.isUID(a._id.toString()));
-    test.ok(utils.isUID(b._id.toString()));
+    test.ok(utils.isUID(a._id));
+    test.ok(utils.isUID(b._id));
     test.done();
   }
 
@@ -253,7 +253,7 @@ module testserial {
     test.ok(serial.readValue('-120.3344e20xxx') === -120.3344e20);
     test.throws(function() { serial.readValue('aaa<123456781234567812345678>'); });
     test.ok(utils.isEqual(serial.readValue('<123456781234567812345678>aaa'), 
-      new serial.Reference('123456781234567812345678')));
+      new serial.Reference(utils.makeUID('123456781234567812345678'))));
     test.done();
   };
 

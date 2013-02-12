@@ -100,7 +100,8 @@ module shared {
       addNew(obj: any, prop: string, value: any, lasttx: number): number {
         if (utils.isObjectOrArray(value))
           this.valueId(value);
-        var v = value; //serial.writeValue(this, value, '');
+        var v = value;
+        if (typeof v === 'function') v = null;
         this._mtx.cset.push({obj:obj, write: prop, value: v, lasttx: lasttx});
         return this._mtx.cset.size() - 1;
       }
@@ -108,7 +109,8 @@ module shared {
       addWrite(obj: any, prop: string, value: any, last: any, lasttx: number): number {
         if (utils.isObjectOrArray(value))
           this.valueId(value);
-        var v = value;  //serial.writeValue(this, value, '');
+        var v = value;
+        if (typeof v === 'function') v = null;
         this._mtx.cset.push({obj:obj, write: prop, value: v, last: last, lasttx: lasttx});
         return this._mtx.cset.size() - 1;
       }

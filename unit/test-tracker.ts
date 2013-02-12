@@ -9,11 +9,9 @@ module testtracker {
   var store: shared.store.MongoStore = null;
 
   function reset() {
-    if (store === null)
-      store = new shared.store.MongoStore();
-    else
-      store.reset();
-
+    if (store !== null)
+      store.close();
+    store = new shared.store.MongoStore();
     utils.defaultLogger().disableDebugLogging();
   }
   
@@ -44,7 +42,7 @@ module testtracker {
     test.throws(function () { new tracker.Tracker(store,{}, '12'); }, Error);
 
     var obj = {};
-    var t = new tracker.Tracker(store,{}, '123456781234567812345678');
+    var t = new tracker.Tracker(store,{}, utils.makeUID('123456781234567812345678'));
     test.ok(typeof t == 'object');
     test.ok(t.id().toString() == '123456781234567812345678');
     test.done();
@@ -64,7 +62,7 @@ module testtracker {
     test.throws(function () { new tracker.Tracker(store,[], '12'); }, Error);
 
     var obj = [];
-    var t = new tracker.Tracker(store,{}, '123456781234567812345678');
+    var t = new tracker.Tracker(store, {}, utils.makeUID('123456781234567812345678'));
     test.ok(typeof t == 'object');
     test.ok(t.id().toString() == '123456781234567812345678');
     test.done();
@@ -91,7 +89,7 @@ module testtracker {
     test.ok(typeof obj.a == 'number');
     test.ok(obj.a === 1);
     obj.a = 2;
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '2', last: 1, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 2, last: 1, lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.ok(obj.a === 2);
@@ -105,7 +103,7 @@ module testtracker {
     test.ok(typeof obj.a == 'string');
     test.ok(obj.a === 'b');
     obj.a = 'c';
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '"c"', last: 'b', lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 'c', last: 'b', lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.ok(obj.a === 'c');
@@ -119,7 +117,7 @@ module testtracker {
     test.ok(typeof obj.a == 'boolean');
     test.ok(obj.a === true);
     obj.a = false;
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 'false', last: true, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: false, last: true, lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.ok(obj.a === false);
@@ -133,7 +131,7 @@ module testtracker {
     var t = new tracker.Tracker(store,obj);
     test.ok(typeof obj.a == 'function');
     obj.a = function (a) { };
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: 'null', last: f, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: null, last: f, lasttx: -1 }));
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
     test.done();
@@ -151,8 +149,7 @@ module testtracker {
     test.ok(store.readsetSize() === 1);
     obj.a = { b: 1 };
     test.ok(store.readsetSize() === 1);
-    var v = '<' + store.valueId(obj.a) + '>';
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: v, last: {}, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: { b: 1 }, last: {}, lasttx: -1 }));
     var id = store.valueId(obj.a).toString();
     test.ok(utils.isEqual(store.newsetObject(id), { b: 1 }));
     test.ok(store.newsetSize() === 1);
@@ -171,9 +168,8 @@ module testtracker {
     test.ok(store.readsetObject(t2.id()) === 0);
     test.ok(store.readsetSize() === 1);
     obj.a = [1];
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: [1], last: [], lasttx: -1 }));
     var id = store.valueId(obj.a).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: v, last: [], lasttx: -1 }));
     test.ok(utils.isEqual(store.newsetObject(id), [1]));
     test.ok(store.newsetSize() === 1);
     test.ok(utils.isEqual(obj.a, [1]));
@@ -190,29 +186,27 @@ module testtracker {
     obj.a = '';
     test.ok(obj.a === '');
     test.ok(store.readsetSize() === 0);
-    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '""', last: 1, lasttx: -1 }));
+    test.ok(utils.isEqual(store.cset()[0], { obj: obj, write: 'a', value: '', last: 1, lasttx: -1 }));
     obj.a = true;
     test.ok(obj.a === true);
     test.ok(store.readsetSize() === 0);
-    test.ok(utils.isEqual(store.cset()[1], { obj: obj, write: 'a', value: 'true', last: '', lasttx: 0 }));
+    test.ok(utils.isEqual(store.cset()[1], { obj: obj, write: 'a', value: true, last: '', lasttx: 0 }));
     var f = function () { };
     obj.a = f;
     test.ok(obj.a === f);
     test.ok(store.readsetSize() === 0);
     test.ok(store.newsetSize() === 0);
-    test.ok(utils.isEqual(store.cset()[2], { obj: obj, write: 'a', value: 'null', last: true, lasttx: 1 }));
+    test.ok(utils.isEqual(store.cset()[2], { obj: obj, write: 'a', value: null, last: true, lasttx: 1 }));
     obj.a = {};
-    var id = store.valueId(obj.a).toString();
-    var v1 = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset()[3], { obj: obj, write: 'a', value: v1, last: f, lasttx: 2 }));
+    test.ok(utils.isEqual(store.cset()[3], { obj: obj, write: 'a', value: {}, last: f, lasttx: 2 }));
     test.ok(store.readsetSize() === 0);
+    var id = store.valueId(obj.a).toString();
     test.ok(utils.isEqual(store.newsetObject(id), {}));
     test.ok(store.newsetSize() === 1);
     obj.a = [];
-    var id = store.valueId(obj.a).toString();
-    var v2 = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset()[4], { obj: obj, write: 'a', value: v2, last: {}, lasttx: 3 }));
+    test.ok(utils.isEqual(store.cset()[4], { obj: obj, write: 'a', value: [], last: {}, lasttx: 3 }));
     test.ok(store.readsetSize() === 0);
+    var id = store.valueId(obj.a).toString();
     test.ok(utils.isEqual(store.newsetObject(id), []));
     test.ok(store.newsetSize() === 2);
 
@@ -235,10 +229,10 @@ module testtracker {
       value: 1
     });
     test.throws(function () { new tracker.Tracker(store,obj); }, Error);
-
+    
     test.done();
   };
-
+  
   export function nonenum(test) {
     reset();
     var obj: any = {};
@@ -327,11 +321,11 @@ module testtracker {
     test.ok(utils.isEqual(store.cset()[0], { obj: obj, shift: 0, size: 1, lasttx: -1 }));
     obj.unshift(3);
     test.ok(utils.isEqual(store.cset()[1], { obj: obj, unshift: 0, size: 1, lasttx: 0 }));
-    test.ok(utils.isEqual(store.cset()[2], { obj: obj, write: '0', value: '3', lasttx: 1 }));
+    test.ok(utils.isEqual(store.cset()[2], { obj: obj, write: '0', value: 3, lasttx: 1 }));
     obj.unshift(4, 5);
     test.ok(utils.isEqual(store.cset()[3], { obj: obj, unshift: 0, size: 2, lasttx: 2 }));
-    test.ok(utils.isEqual(store.cset()[4], { obj: obj, write: '0', value: '4', lasttx: 3 }));
-    test.ok(utils.isEqual(store.cset()[5], { obj: obj, write: '1', value: '5', lasttx: 4 }));
+    test.ok(utils.isEqual(store.cset()[4], { obj: obj, write: '0', value: 4, lasttx: 3 }));
+    test.ok(utils.isEqual(store.cset()[5], { obj: obj, write: '1', value: 5, lasttx: 4 }));
     test.ok(obj, [4, 5, 3, 1]);
     test.done();
   };
@@ -342,14 +336,14 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = 1;
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: '1', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: 1, lasttx: -1 }]));
 
     reset();
     var obj = { a: 1 };
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = 2;
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: '2', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: 2, lasttx: -1 }]));
     test.done();
   };
 
@@ -359,14 +353,14 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = true;
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: 'true', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: true, lasttx: -1 }]));
 
     reset();
     var obj = { a: 1 };
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = false;
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: 'false', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: false, lasttx: -1 }]));
 
     test.done();
   };
@@ -377,14 +371,14 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = 'a';
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: '"a"', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: 'a', lasttx: -1 }]));
 
     reset();
     var obj = { a: 1 };
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = 'b';
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: '"b"', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: 'b', lasttx: -1 }]));
 
     test.done();
   };
@@ -395,14 +389,14 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = null;
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: 'null', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: null, lasttx: -1 }]));
 
     reset();
     var obj = { a: 1 };
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = undefined;
     store.collectObject(obj);
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: 'undefined', lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: undefined, lasttx: -1 }]));
 
     test.done();
   };
@@ -413,9 +407,8 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = {};
     store.collectObject(obj);
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: {}, lasttx: -1 }]));
     var id = store.valueId(obj.a).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: v, lasttx: -1 }]));
     test.ok(utils.isEqual(store.newsetObject(id), {}));
     test.ok(store.newsetSize() === 1);
     test.ok(store.readsetSize() === 0);
@@ -425,9 +418,8 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = {};
     store.collectObject(obj);
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: {}, lasttx: -1 }]));
     var id = store.valueId(obj.b).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: v, lasttx: -1 }]));
     test.ok(utils.isEqual(store.newsetObject(id), {}));
     test.ok(store.newsetSize() === 1);
     test.ok(store.readsetSize() === 0);
@@ -441,11 +433,10 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = { b: {} };
     store.collectObject(obj);
-    var id = store.valueId(obj.a).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: v, lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: { b: {} }, lasttx: -1 }]));
     var bid = store.valueId(obj.a.b).toString();
     test.ok(utils.isEqual(store.newsetObject(bid), {}));
+    var id = store.valueId(obj.a).toString();
     test.ok(utils.isEqual(store.newsetObject(id), { b: {} }));
 
     test.ok(store.readsetSize() === 0);
@@ -455,11 +446,10 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = { c: {} };
     store.collectObject(obj);
-    var id = store.valueId(obj.b).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: v, lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: { c: {} }, lasttx: -1 }]));
     var bid = store.valueId(obj.b.c).toString();
     test.ok(utils.isEqual(store.newsetObject(bid), {}));
+    var id = store.valueId(obj.b).toString();
     test.ok(utils.isEqual(store.newsetObject(id), { c: {} }));
     test.ok(store.readsetSize() === 0);
     test.done();
@@ -471,9 +461,8 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = [];
     store.collectObject(obj);
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: [], lasttx: -1 }]));
     var id = store.valueId(obj.a).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: v, lasttx: -1 }]));
     test.ok(utils.isEqual(store.newsetObject(id), []));
     test.ok(store.newsetSize() === 1);
     test.ok(store.readsetSize() === 0);
@@ -483,9 +472,8 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = [];
     store.collectObject(obj);
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: [], lasttx: -1 }]));
     var id = store.valueId(obj.b).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: v, lasttx: -1 }]));
     test.ok(utils.isEqual(store.newsetObject(id), []));
     test.ok(store.newsetSize() === 1);
     test.ok(store.readsetSize() === 0);
@@ -499,11 +487,10 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.a = [[]];
     store.collectObject(obj);
-    var id = store.valueId(obj.a).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: v, lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'a', value: [[]], lasttx: -1 }]));
     var bid = store.valueId(obj.a[0]).toString();
     test.ok(utils.isEqual(store.newsetObject(bid), []));
+    var id = store.valueId(obj.a).toString();
     test.ok(utils.isEqual(store.newsetObject(id), [[]]));
     test.ok(store.readsetSize() === 0);
 
@@ -512,11 +499,10 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj.b = [[]];
     store.collectObject(obj);
-    var id = store.valueId(obj.b).toString();
-    var v = '<' + id + '>';
-    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: v, lasttx: -1 }]));
+    test.ok(utils.isEqual(store.cset(), [{ obj: obj, write: 'b', value: [[]], lasttx: -1 }]));
     var bid = store.valueId(obj.b[0]).toString();
     test.ok(utils.isEqual(store.newsetObject(bid), []));
+    var id = store.valueId(obj.b).toString();
     test.ok(utils.isEqual(store.newsetObject(id), [[]]));
     test.ok(store.readsetSize() === 0);
 
@@ -598,11 +584,11 @@ module testtracker {
     obj[0] = 2; obj[1] = false; obj[2] = 'a'; obj[3] = undefined; obj[4] = null;
     store.collectObject(obj);
     var writeset : any[] = [
-     { obj: obj, write: '0', value: '2', last: 1, lasttx: -1 },
-     { obj: obj, write: '1', value: 'false', last: true, lasttx: 0 },
-     { obj: obj, write: '2', value: '"a"', last: '', lasttx: 1 },
-     { obj: obj, write: '3', value: 'undefined', last: null, lasttx: 2 },
-     { obj: obj, write: '4', value: 'null', last: undefined, lasttx: 3 }];
+     { obj: obj, write: '0', value: 2, last: 1, lasttx: -1 },
+     { obj: obj, write: '1', value: false, last: true, lasttx: 0 },
+     { obj: obj, write: '2', value: 'a', last: '', lasttx: 1 },
+     { obj: obj, write: '3', value: undefined, last: null, lasttx: 2 },
+     { obj: obj, write: '4', value: null, last: undefined, lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset));
     test.ok(store.newsetSize() === 0);
     test.ok(store.readsetSize() === 0);
@@ -613,11 +599,10 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj[0] = embed;
     store.collectObject(obj);
-    var id = store.valueId(obj[0]).toString();
-    var v = '<' + id + '>';
     var writeset = [
-     { obj: obj, write: '0', value: v, last: null, lasttx: -1 }];
+     { obj: obj, write: '0', value: {}, last: null, lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset));
+    var id = store.valueId(obj[0]).toString();
     test.ok(utils.isEqual(store.newsetObject(id), {}));
     test.ok(store.newsetSize() === 1);
     test.ok(store.readsetSize() === 0);
@@ -628,11 +613,10 @@ module testtracker {
     test.ok(typeof new tracker.Tracker(store,obj) === 'object');
     obj[0] = embed;
     store.collectObject(obj);
-    var id = store.valueId(obj[0]).toString();
-    var v = '<' + id + '>';
     var writeset = [
-     { obj: obj, write: '0', value: v, last: null, lasttx: -1 }];
+     { obj: obj, write: '0', value: [], last: null, lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset));
+    var id = store.valueId(obj[0]).toString();
     test.ok(utils.isEqual(store.newsetObject(id), []));
     test.ok(store.newsetSize() === 1);
     test.ok(store.readsetSize() === 0);
@@ -652,8 +636,8 @@ module testtracker {
      { obj: obj, shift: 0, size: 1, lasttx: -1 },
      { obj: obj, shift: 0, size: 1, lasttx: 0 },
      { obj: obj, unshift: 0, size: 2, lasttx: 1 },
-     { obj: obj, write: '0', value: '5', lasttx: 2 },
-     { obj: obj, write: '1', value: '4', lasttx: 3 }];
+     { obj: obj, write: '0', value: 5, lasttx: 2 },
+     { obj: obj, write: '1', value: 4, lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset));
 
     reset();
@@ -664,8 +648,8 @@ module testtracker {
     obj.push(4, 5);
     store.collectObject(obj);
     var writeset: any[] = [
-     { obj: obj, write: '1', value: '4', lasttx: -1 },
-     { obj: obj, write: '2', value: '5', lasttx: 0 }];
+     { obj: obj, write: '1', value: 4, lasttx: -1 },
+     { obj: obj, write: '2', value: 5, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset));
 
     reset();
@@ -679,8 +663,8 @@ module testtracker {
     var writeset2: any[] = [
      { obj: obj, shift: 0, size: 1, lasttx: -1 },
      { obj: obj, unshift: 0, size: 1, lasttx: 0 },
-     { obj: obj, write: '0', value: '0', lasttx: 1 },
-     { obj: obj, write: '2', value: '4', lasttx: 2 }];
+     { obj: obj, write: '0', value: 0, lasttx: 1 },
+     { obj: obj, write: '2', value: 4, lasttx: 2 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
 
     reset();
@@ -694,8 +678,8 @@ module testtracker {
     var writeset3: any[] = [
      { obj: obj, shift: 0, size: 1, lasttx: -1 },
      { obj: obj, unshift: 0, size: 1, lasttx: 0 },
-     { obj: obj, write: '0', value: '0', lasttx: 1 },
-     { obj: obj, write: '2', value: '4', lasttx: 2 }];
+     { obj: obj, write: '0', value: 0, lasttx: 1 },
+     { obj: obj, write: '2', value: 4, lasttx: 2 }];
     test.ok(utils.isEqual(store.cset(), writeset3));
   
     reset();
@@ -710,9 +694,9 @@ module testtracker {
     var writeset4: any[] = [
      { obj: obj, shift: 0, size: 1, lasttx: -1 },
      { obj: obj, unshift: 0, size: 1, lasttx: 0 },
-     { obj: obj, write: '0', value: '0', lasttx: 1 },
-     { obj: obj, shift: 2, size: 1, lasttx: 2 },
-     { obj: obj, write: '1', value: '4', lasttx: 3 }];
+     { obj: obj, write: '0', value: 0, lasttx: 1 },
+     { obj: obj, shift: -1, size: 1, lasttx: 2 },
+     { obj: obj, write: '1', value: 4, lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset4));
   
     reset();
@@ -728,8 +712,8 @@ module testtracker {
      { obj: obj, shift: 0, size: 1, lasttx: -1 },
      { obj: obj, shift: 0, size: 1, lasttx: 0 },
      { obj: obj, unshift: 0, size: 1, lasttx: 1 },
-     { obj: obj, write: '0', value: '0', lasttx: 2 },
-     { obj: obj, write: '1', value: '4', lasttx: 3 }];
+     { obj: obj, write: '0', value: 0, lasttx: 2 },
+     { obj: obj, write: '1', value: 4, lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset5));
 
     reset();
@@ -743,8 +727,8 @@ module testtracker {
     store.collectObject(obj);
     var writeset6: any[] = [
      { obj: obj, unshift: 0, size: 1, lasttx: -1 },
-     { obj: obj, write: '0', value: '4', lasttx: 0 },
-     { obj: obj, shift: 1, size: 3, lasttx: 1 }];
+     { obj: obj, write: '0', value: 4, lasttx: 0 },
+     { obj: obj, shift: -1, size: 3, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset6));
 
     reset();
@@ -759,7 +743,7 @@ module testtracker {
      { obj: obj, shift: 0, size: 1, lasttx: -1 },
      { obj: obj, shift: 0, size: 1, lasttx: 0 },
      { obj: obj, shift: 0, size: 1, lasttx: 1 },
-     { obj: obj, write: '0', value: '4', lasttx: 2 }];
+     { obj: obj, write: '0', value: 4, lasttx: 2 }];
     test.ok(utils.isEqual(store.cset(), writeset7));
 
     test.done();
@@ -799,7 +783,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset2: any[] = [
      { obj: obj, del: 'b', lasttx: -1 },
-     { obj: obj, write: 'b', value: '4', lasttx: 0 }];
+     { obj: obj, write: 'b', value: 4, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
 
     test.done();
@@ -839,7 +823,7 @@ module testtracker {
     obj[1] = 4;
     store.collectObject(obj);
     var writeset2 = [
-     { obj: obj, write: '1', value: '4', lasttx: -1 }];
+     { obj: obj, write: '1', value: 4, lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
 
     test.done();
@@ -878,7 +862,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset2: any[] = [
      { obj: obj, reverse: true, lasttx: -1 },
-     { obj: obj, write: '2', value: '2', lasttx: 0 }];
+     { obj: obj, write: '2', value: 2, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
     test.ok(utils.isEqual(obj, [4, 3, 2, 1]));
 
@@ -993,7 +977,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset2 : any[] = [
      { obj: obj, shift: 1, size:2, lasttx: -1 },
-     { obj: obj, write: '2', value:'5', lasttx: 0 }];
+     { obj: obj, write: '2', value:5, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
     test.ok(utils.isEqual(obj, [4,1,5]));
 
@@ -1005,7 +989,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset3 : any[] = [
      { obj: obj, shift: 1, size:2, lasttx: -1 },
-     { obj: obj, shift: 1, size:1, lasttx: 0 }];
+     { obj: obj, shift: -1, size:1, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset3));
     test.ok(utils.isEqual(obj, [4]));
 
@@ -1030,7 +1014,7 @@ module testtracker {
     var writeset5 : any[] = [
      { obj: obj, shift: 1, size:2, lasttx: -1 },
      { obj: obj, unshift: 0, size:1, lasttx: 0 },
-     { obj: obj, write: '0', value:'5', lasttx: 1 }];
+     { obj: obj, write: '0', value:5, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset5));
     test.ok(utils.isEqual(obj, [5,4,1]));
 
@@ -1054,7 +1038,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset7 : any[] = [
      { obj: obj, shift: 1, size:2, lasttx: -1 },
-     { obj: obj, write: '0', value: '5', last: 4, lasttx: 0 }];
+     { obj: obj, write: '0', value: 5, last: 4, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset7));
     test.ok(utils.isEqual(obj, [5,1]));
     
@@ -1079,7 +1063,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset1 : any[] = [
      { obj: obj, unshift: 1, size:1, lasttx: -1 },
-     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+     { obj: obj, write: '1', value: 5, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset1));
     test.ok(utils.isEqual(obj, [4, 5, 2, 3, 1]));
 
@@ -1090,8 +1074,8 @@ module testtracker {
     store.collectObject(obj);
     var writeset2 : any[] = [
      { obj: obj, unshift: 1, size: 2, lasttx: -1 },
-     { obj: obj, write: '1', value: '5', lasttx: 0 },
-     { obj: obj, write: '2', value: '6', lasttx: 1 }];
+     { obj: obj, write: '1', value: 5, lasttx: 0 },
+     { obj: obj, write: '2', value: 6, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
     test.ok(utils.isEqual(obj, [4, 5, 6, 2, 3, 1]));
 
@@ -1102,8 +1086,8 @@ module testtracker {
     store.collectObject(obj);
     var writeset3 : any[] = [
      { obj: obj, unshift: 4, size: 2, lasttx: -1 },
-     { obj: obj, write: '4', value: '5', lasttx: 0 },
-     { obj: obj, write: '5', value: '6', lasttx: 1 }];
+     { obj: obj, write: '4', value: 5, lasttx: 0 },
+     { obj: obj, write: '5', value: 6, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset3));
     test.ok(utils.isEqual(obj, [4, 2, 3, 1, 5, 6]));
 
@@ -1114,8 +1098,8 @@ module testtracker {
     store.collectObject(obj);
     var writeset4 : any[] = [
      { obj: obj, unshift: 0, size: 2, lasttx: -1 },
-     { obj: obj, write: '0', value: '5', lasttx: 0 },
-     { obj: obj, write: '1', value: '6', lasttx: 1 }];
+     { obj: obj, write: '0', value: 5, lasttx: 0 },
+     { obj: obj, write: '1', value: 6, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset4));
     test.ok(utils.isEqual(obj, [5, 6, 4, 2, 3, 1]));
 
@@ -1129,7 +1113,7 @@ module testtracker {
     obj[2] = 5;
     store.collectObject(obj);
     var writeset1 : any[] = [
-     { obj: obj, write: '2', value: '5', lasttx: -1 }];
+     { obj: obj, write: '2', value: 5, lasttx: -1 }];
     test.ok(utils.isEqual(store.cset(), writeset1));
     test.ok(utils.isEqual(obj, [4, , 5, 1]));
 
@@ -1141,7 +1125,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset2 : any[] = [
      { obj: obj, del: '3', lasttx: -1 },
-     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+     { obj: obj, write: '1', value: 5, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset2));
     test.ok(utils.isEqual(obj, [4, 5, undefined ,undefined ]));
 
@@ -1152,8 +1136,8 @@ module testtracker {
     obj.push(6);
     store.collectObject(obj);
     var writeset3 : any[] = [
-     { obj: obj, write: '1', value: '5', lasttx: -1 },
-     { obj: obj, write: '4', value: '6', lasttx: 0 }];
+     { obj: obj, write: '1', value: 5, lasttx: -1 },
+     { obj: obj, write: '4', value: 6, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset3));
     test.ok(utils.isEqual(obj, [4, 5, undefined , 1, 6 ]));
 
@@ -1164,8 +1148,8 @@ module testtracker {
     obj[1] = 5;
     store.collectObject(obj);
     var writeset4 : any[] = [
-     { obj: obj, shift: 3, size: 1, lasttx: -1 },
-     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+     { obj: obj, shift: -1, size: 1, lasttx: -1 },
+     { obj: obj, write: '1', value: 5, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset4));
     test.ok(utils.isEqual(obj, [4, 5, undefined ]));
 
@@ -1177,7 +1161,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset5 : any[] = [
      { obj: obj, shift: 0, size: 1, lasttx: -1 },
-     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+     { obj: obj, write: '1', value: 5, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset5));
     test.ok(utils.isEqual(obj, [undefined, 5, 1 ]));
 
@@ -1189,8 +1173,8 @@ module testtracker {
     store.collectObject(obj);
     var writeset6 : any[] = [
      { obj: obj, unshift: 0, size: 1, lasttx: -1 },
-     { obj: obj, write: '0', value: '6', lasttx: 0 },
-     { obj: obj, write: '1', value: '5', last: 4, lasttx: 1 }];
+     { obj: obj, write: '0', value: 6, lasttx: 0 },
+     { obj: obj, write: '1', value: 5, last: 4, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset6));
     test.ok(utils.isEqual(obj, [6, 5, undefined, undefined, 1 ]));
 
@@ -1202,9 +1186,9 @@ module testtracker {
     store.collectObject(obj);
     var writeset7 : any[] = [
      { obj: obj, unshift: 0, size: 2, lasttx: -1 },
-     { obj: obj, write: '0', value: '6', lasttx: 0 },
-     { obj: obj, write: '1', value: '7', lasttx: 1 },
-     { obj: obj, write: '1', value: '5', last: 7, lasttx: 2 }];
+     { obj: obj, write: '0', value: 6, lasttx: 0 },
+     { obj: obj, write: '1', value: 7, lasttx: 1 },
+     { obj: obj, write: '1', value: 5, last: 7, lasttx: 2 }];
     test.ok(utils.isEqual(store.cset(), writeset7));
     test.ok(utils.isEqual(obj, [6, 5, 4, undefined, undefined, 1 ]));
 
@@ -1216,7 +1200,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset7a : any[] = [
      { obj: obj, reverse: true, lasttx: -1 },
-     { obj: obj, write: '1', value: '5', lasttx: 0 }];
+     { obj: obj, write: '1', value: 5, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset7a));
     test.ok(utils.isEqual(obj, [1, 5, undefined, 4 ]));
 
@@ -1239,7 +1223,7 @@ module testtracker {
     store.collectObject(obj);
     var writeset9: any[] = [
       { obj: obj, shift: 1, size: 2, lasttx: -1 },
-      { obj: obj, write: '1', value: '5', last: 1, lasttx: 0 }];
+      { obj: obj, write: '1', value: 5, last: 1, lasttx: 0 }];
     test.ok(utils.isEqual(store.cset(), writeset9));
     test.ok(utils.isEqual(obj, [4, 5 ]));
 
@@ -1252,7 +1236,7 @@ module testtracker {
     var writeset9a: any[] = [
       { obj: obj, shift: 1, size: 2, lasttx: -1 },
       { obj: obj, unshift: 1, size: 1, lasttx: 0 },
-      { obj: obj, write: '1', value: '5', lasttx: 1 }];
+      { obj: obj, write: '1', value: 5, lasttx: 1 }];
     test.ok(utils.isEqual(store.cset(), writeset9a));
     test.ok(utils.isEqual(obj, [4, 5, 1 ]));
 
@@ -1266,8 +1250,8 @@ module testtracker {
       { obj: obj, shift: 1, size: 1, lasttx: -1 },
       { obj: obj, unshift: 1, size: 1, lasttx: 0 },
       { obj: obj, unshift: 0, size: 1, lasttx: 1 },
-      { obj: obj, write: '0', value: '7', lasttx: 2 },
-      { obj: obj, write: '2', value: '6', lasttx: 3 }];
+      { obj: obj, write: '0', value: 7, lasttx: 2 },
+      { obj: obj, write: '2', value: 6, lasttx: 3 }];
     test.ok(utils.isEqual(store.cset(), writeset10));
     test.ok(utils.isEqual(obj, [7, 4, 6, undefined, 1 ]));
 
@@ -1280,11 +1264,11 @@ module testtracker {
     store.collectObject(obj);
     var writeset11: any[] = [
       { obj: obj, unshift: 0, size: 1, lasttx: -1 },
-      { obj: obj, write: '0', value: '6', lasttx: 0 },
+      { obj: obj, write: '0', value: 6, lasttx: 0 },
       { obj: obj, shift: 1, size: 1, lasttx: 1 },
       { obj: obj, unshift: 1, size: 1, lasttx: 2 },
       { obj: obj, shift: 0, size: 1, lasttx: 3 },
-      { obj: obj, write: '0', value: '7', lasttx: 4 }];
+      { obj: obj, write: '0', value: 7, lasttx: 4 }];
     test.ok(utils.isEqual(store.cset(), writeset11));
     test.ok(utils.isEqual(obj, [7, undefined, undefined, 1 ]));
 
@@ -1300,8 +1284,8 @@ module testtracker {
       { obj: obj, shift: 1, size: 1, lasttx: 0 },
       { obj: obj, unshift: 1, size: 1, lasttx: 1 },
       { obj: obj, unshift: 0, size: 1, lasttx: 2 },
-      { obj: obj, write: '0', value: '6', lasttx: 3 },
-      { obj: obj, write: '2', value: '7', lasttx: 4 }];
+      { obj: obj, write: '0', value: 6, lasttx: 3 },
+      { obj: obj, write: '2', value: 7, lasttx: 4 }];
     test.ok(utils.isEqual(store.cset(), writeset12));
     test.ok(utils.isEqual(obj, [6, undefined, 7, 1 ]));
 
@@ -1316,8 +1300,8 @@ module testtracker {
       { obj: obj, shift: 1, size: 1, lasttx: -1 },
       { obj: obj, unshift: 1, size: 1, lasttx: 0 },
       { obj: obj, unshift: 0, size: 1, lasttx: 1 },
-      { obj: obj, write: '0', value: '6', lasttx: 2 },
-      { obj: obj, write: '2', value: '7', lasttx: 3 },
+      { obj: obj, write: '0', value: 6, lasttx: 2 },
+      { obj: obj, write: '2', value: 7, lasttx: 3 },
       { obj: obj, del: '4', lasttx: 4 }];
     test.ok(utils.isEqual(store.cset(), writeset14));
     test.ok(utils.isEqual(obj, [6, 4 , 7, undefined, undefined ]));
@@ -1335,10 +1319,10 @@ module testtracker {
       { obj: obj, unshift: 1, size: 1, lasttx: 0 },
       { obj: obj, reverse: true, lasttx: 1 },
       { obj: obj, unshift: 0, size: 1, lasttx: 2 },
-      { obj: obj, write: '0', value: '6', lasttx: 3 },
+      { obj: obj, write: '0', value: 6, lasttx: 3 },
       { obj: obj, del: '1', lasttx: 4 },
       { obj: obj, del: '2', lasttx: 5 },
-      { obj: obj, write: '3', value: '7', lasttx: 6 }];
+      { obj: obj, write: '3', value: 7, lasttx: 6 }];
     test.ok(utils.isEqual(store.cset(), writeset15));
     test.ok(utils.isEqual(obj, [6, undefined, undefined, 7, 4 ]));
 
@@ -1357,10 +1341,10 @@ module testtracker {
       { obj: obj, unshift: 1, size: 1, lasttx: 0 },
       { obj: obj, reverse: true, lasttx: 1 },
       { obj: obj, unshift: 0, size: 1, lasttx: 2 },
-      { obj: obj, write: '0', value: '6', lasttx: 3 },
-      { obj: obj, write: '1', value: '8', lasttx: 4 },
+      { obj: obj, write: '0', value: 6, lasttx: 3 },
+      { obj: obj, write: '1', value: 8, lasttx: 4 },
       { obj: obj, del: '2', lasttx: 5 },
-      { obj: obj, write: '4', value: '7', lasttx: 6 }];
+      { obj: obj, write: '4', value: 7, lasttx: 6 }];
     test.ok(utils.isEqual(store.cset(), writeset16));
     test.ok(utils.isEqual(obj, [6, 8, undefined, undefined, 7 ]));
 
