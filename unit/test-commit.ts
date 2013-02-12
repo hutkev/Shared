@@ -4,466 +4,266 @@
 module testcommit {
 
   import utils = shared.utils;
-  import message = shared.message;
   import mod = shared.store;
 
   var util = require('util');
+  var store: shared.store.MongoStore = null;
 
-  function newPrimary() : shared.store.PrimaryStore {
-    if (mod.PrimaryStore._primaryStore != null)
-      mod.PrimaryStore._primaryStore.stop();
-    mod.PrimaryStore._primaryStore = null;
+  function newPrimary(): shared.store.MongoStore {
     //utils.defaultLogger().enableDebugLogging('STORE');
-    var s = new mod.PrimaryStore();
-    utils.dassert(s === mod.PrimaryStore._primaryStore);
-    return s;
+    if (store != null)
+      store.close();
+    store = new shared.store.MongoStore();
+    return store;
   }
   
   export function create(test) {
     var m = newPrimary();
-    var n = mod.createStore();
-    var o = mod.createStore();
+    var n = mod.createStore({});
+    var o = mod.createStore({});
     test.ok(m !== n);
     test.ok(m !== o);
     test.ok(n !== o);
+    n.close();
+    o.close();
     test.done();
   };
 
   export function emptyCommit(test) {
     var s = newPrimary();
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    test.ok(s.commit());
-    test.done();
-  };
-
-  export function simpleAssign(test) {
-    var s = newPrimary();
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = 1;
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 1);
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = 2;
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 2);
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = 'foo';
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 3);
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = false;
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 4);
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = null;
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 5);
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = undefined;
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 6);
-
-    test.done();
-  };
-
-  export function objectAssign(test) {
-    var s = newPrimary();
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = {};
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 1);
-    test.ok(utils.isEqual(db, { a: {} }));
-    test.done();
-  };
-
-  export function arrayAssign(test) {
-    var s = newPrimary();
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = [];
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 1);
-    test.ok(utils.isEqual(db, { a: [] }));
-    test.done();
-  };
-
-  export function nestedObjectAssign(test) {
-    var s = newPrimary();
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = { b: {} };
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 1);
-    test.ok(utils.isEqual(db, { a: { b: {} } }));
-    test.done();
-  };
-
-  export function nestedArrayAssign(test) {
-    var s = newPrimary();
-
-    var db = s.store();
-    test.ok(utils.isObject(db));
-    db.a = [ [0] ];
-    test.ok(s.commit());
-    test.ok(db._tracker._rev === 1);
-    test.ok(utils.isEqual(db, { a: [[0]] }));
-    test.done();
-  };
-
-  export function secondaryEmpty(test) {
-    var p = newPrimary();
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      // Empty
+    s.apply(function (db) {
+      test.ok(utils.isObject(db));
     }, function (err) {
-      test.ok(err == null);
-      s.atomic(function (db) {
-        // Empty
+      test.ok(err === null);
+      s.close();
+      test.done();
+    });
+  };
+
+  function assign(test, setter, tester) {
+    var s = newPrimary();
+
+    var rev;
+    s.apply(function (db) {
+      rev = db._tracker._rev;
+      setter(db);
+      return db;
+    }, function (err, ret) {
+      test.ok(err === null);
+      test.ok(tester(ret));
+      test.ok(ret._tracker._rev === rev + 1);
+      s.apply(function (db) {
+        delete db.a;
       }, function (err) {
-        test.ok(err == null);
+        test.ok(err === null);
+        s.close();
         test.done();
       });
     });
   }
 
-  export function secondaryAssign(test) {
-    var p = newPrimary();
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a = 1;
-    }, function (err) {
+  export function simpleAssignNumber(test) {
+    assign(test, function (db) { db.a = 1 }, function (db) { return db.a === 1 });
+  }
+
+  export function simpleAssignNumber2(test) {
+    assign(test, function (db) { db.a = 2 }, function (db) { return db.a === 2 });
+  }
+
+  export function simpleAssignString(test) {
+    assign(test, function (db) { db.a = 'foo' }, function (db) { return db.a === 'foo' });
+  }
+
+  export function simpleAssignBool(test) {
+    assign(test, function (db) { db.a = true }, function (db) { return db.a === true });
+  }
+
+  export function simpleAssignNull(test) {
+    assign(test, function (db) { db.a = null }, function (db) { return db.a === null });
+  }
+
+  export function simpleAssignUndefined(test) {
+    assign(test, function (db) { db.a = undefined }, function (db) { return db.a === undefined });
+  }
+
+  export function simpleAssignObject(test) {
+    assign(test, function (db) { db.a = {} }, function (db) { return utils.isEqual(db.a,{}) });
+  }
+
+  export function simpleAssignArray(test) {
+    assign(test, function (db) { db.a = [] }, function (db) { return utils.isEqual(db.a, []) });
+  }
+
+  export function simpleAssignNestedObject(test) {
+    assign(test, function (db) { db.a = { b: {} } }, function (db) { return utils.isEqual(db.a, { b: {} }) });
+  }
+
+  export function simpleAssignNestedArray(test) {
+    assign(test, function (db) { db.a = [[0]] }, function (db) { return utils.isEqual(db.a, [[0]]) });
+  }
+
+  function initAndAssign(test, init, setter, tester) {
+    var s = newPrimary();
+    s.apply(function (db) {
+      init(db);
+      return db;
+    }, function (err, ret) {
       test.ok(err === null);
-      test.done();
-    });
-  }
-
-  export function secondaryAssignBadRev(test) {
-    var p = newPrimary();
-    p.store()._tracker._rev = 1;
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a = 1;
-    }, function (err) {
-      test.ok(err === null);
-      test.done();
-    });
-  }
-
-  export function secondaryAssignOverwrite(test) {
-    var p = newPrimary();
-    p.store().a = 1;
-    p.store().b = 2;
-    p.store()._tracker._rev = 1;
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a = 3;
-    }, function (err) {
-      test.ok(err === null);
-      test.ok(p.store().a == 3);
-      test.ok(p.store().b == 2);
-      test.done();
-    });
-  }
-
-  export function secondaryNested(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = { b: 0 };
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.b += 1;
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(p.store().a.b == 1);
-      test.done();
-    });
-  }
-
-  export function secondaryNestedDouble(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = { count: 0 };
-      db.b = { count: 0 };
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.count += 1;
-      db.b.count += 1;
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(p.store().a.count == 1);
-      test.ok(p.store().b.count == 1);
-      test.done();
-    });
-  }
- 
-  export function secondaryDelProp(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = 1;
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      delete db.a;
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(p.store().a === undefined);
-      test.done();
-    });
-  }
- 
- export function secondaryDelNested(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = {};
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      delete db.a;
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(p.store().a === undefined);
-      test.done();
-    });
-  }
-
- export function secondaryDelDNested(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = { b: {} };
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      delete db.a.b;
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,{}));
-      test.done();
-    });
-  }
-
- export function secondaryArrayDel(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [1,2,3];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      delete db.a[1];
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[1,,3]));
-      test.done();
-    });
-  }
-
-  export function secondaryArraySort(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.sort();
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[1,2,3,4]));
-      test.done();
-    });
-  }
-
-  export function secondaryArrayReverse(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.reverse();
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[1,3,2,4]));
-      test.done();
-    });
-  }
-
-  export function secondaryArrayShift1(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.shift();
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[2,3,1]));
-      test.done();
-    });
-  }
-
-  export function secondaryArrayShift2(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.splice(1,2);
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[4,1]));
-      test.done();
-    });
-  }
-
-  export function secondaryArrayShift3(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.splice(3,2);
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[4,2,3]));
-      test.done();
-    });
-  }
-
-  export function secondaryArrayUnshift1(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.unshift(5);
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[5,4,2,3,1]));
-      test.done();
-    });
-  }
-
-  export function secondaryArrayUnshift2(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.unshift(5,6);
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[5,6,4,2,3,1]));
-      test.done();
-    });
-  }
-
-  export function secondaryArrayUnshift3(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.splice(1,0,5,6);
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[4,5,6,2,3,1]));
-      test.done();
-    });
-  }
-
-  export function secondaryArraySplice(test) {
-    var p = newPrimary();
-    p.atomic(function (db) {
-      db.a = [4,2,3,1];
-    });
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a.splice(1,2,7,8);
-    }, function (err) {
-      test.ok(err == null);
-      test.ok(utils.isEqual(p.store().a,[4,7,8,1]));
-      test.done();
-    });
-  }
-
-  export function secondaryWrappedPush(test) {
-    var p = newPrimary();
-
-    var s = new shared.store.SecondaryStore();
-    s.atomic(function (db) {
-      test.ok(utils.isObject(db));
-      db.a = [];
-      db.a.push(1);
-    }, function (err) {
-      test.ok(err == null);
-      s.atomic(function (db) {
-        return db.a.length;
-      }, function (err, res) {
-        test.ok(err===null)
-        test.ok(res===1)
-        test.done();
+      s.apply(function (db) {
+        setter(db);
+      }, function (err) {
+        test.ok(err === null);
+        s.apply(function (db) {
+          return tester(db);
+        }, function (err, ok) {
+          test.ok(err === null);
+          test.ok(ok);
+          s.close();
+          test.done();
+        });
       });
     });
   }
 
+  export function assignOverwrite(test) {
+    initAndAssign(test,
+      function (db) { db.a = 1; db.b = 2; },
+      function (db) { db.a = 3; },
+      function (db) { var x = db.a; delete db.a; delete db.b; return x === 3 }
+    );
+  }
+
+  export function assignNested(test) {
+    initAndAssign(test,
+      function (db) { db.a = { b: 0 } },
+      function (db) { db.a.b = 1; },
+      function (db) { var x = db.a.b; delete db.a; return x === 1 }
+    );
+  }
+
+  export function assignNested2(test) {
+    initAndAssign(test,
+      function (db) { db.a = { count: 1 }; db.b = { count: 1 } },
+      function (db) { db.a.count += 1; db.b.count -= 1; },
+      function (db) {
+        var x = db.a.count;
+        var y = db.b.count;
+        delete db.a;
+        delete db.b;
+        return x === 2 && y === 0;
+      }
+    );
+  }
+
+  export function delProp(test) {
+    initAndAssign(test,
+      function (db) { db.a = 1 },
+      function (db) { delete db.a },
+      function (db) { return db.a === undefined;}
+    );
+  }
+
+  export function delNested(test) {
+    initAndAssign(test,
+      function (db) { db.a = {} },
+      function (db) { delete db.a },
+      function (db) { return db.a === undefined; }
+    );
+  }
+
+  export function delDoubleNested(test) {
+    initAndAssign(test,
+      function (db) { db.a = { b: {} } },
+      function (db) { delete db.a.b },
+      function (db) { var ok = db.a.b === undefined; delete db.a; return ok}
+    );
+  }
+
+  export function arrayDel(test) {
+    initAndAssign(test,
+      function (db) { db.a = [1,2,3] },
+      function (db) { delete db.a[1] },
+      function (db) { var ok = utils.isEqual(db.a, [1, , 3]); delete db.a; return ok }
+    );
+  }
+  
+  export function arraySort(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4,2,3,1] },
+      function (db) { db.a.sort() },
+      function (db) { var ok = utils.isEqual(db.a, [1,2,3,4]); delete db.a; return ok }
+    );
+  }
+
+  export function arrayReverse(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.reverse() },
+      function (db) { var ok = utils.isEqual(db.a, [1, 3, 2, 4]); delete db.a; return ok }
+    );
+  }
+
+  export function arrayShift1(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.shift() },
+      function (db) { var ok = utils.isEqual(db.a, [2, 3, 1]); delete db.a; return ok }
+    );
+  }
+
+  export function arrayShift2(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.splice(1,2) },
+      function (db) { var ok = utils.isEqual(db.a, [4, 1]); delete db.a; return ok }
+    );
+  }
+
+  export function arrayShift3(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.splice(3, 2) },
+      function (db) { var ok = utils.isEqual(db.a, [4, 2, 3]); delete db.a; return ok }
+    );
+  }
+
+  export function arrayUnShift1(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.unshift(5) },
+      function (db) { var ok = utils.isEqual(db.a, [5, 4, 2, 3, 1]); delete db.a; return ok }
+    );
+  }
+
+  export function arrayUnShift2(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.unshift(5,6) },
+      function (db) { var ok = utils.isEqual(db.a, [5, 6, 4, 2, 3, 1]); delete db.a; return ok }
+    );
+  }
+
+  export function arrayUnShift3(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.splice(1,0,5,6) },
+      function (db) { var ok = utils.isEqual(db.a, [4, 5, 6, 2, 3, 1]); delete db.a; return ok }
+    );
+  }
+
+  export function arraySplice(test) {
+    initAndAssign(test,
+      function (db) { db.a = [4, 2, 3, 1] },
+      function (db) { db.a.splice(1, 2, 7, 8) },
+      function (db) { var ok = utils.isEqual(db.a, [4, 7, 8, 1]); delete db.a; return ok }
+    );
+  }
+
+  export function wrappedPush(test) {
+    initAndAssign(test,
+      function (db) { db.a = [] },
+      function (db) { db.a.push(1) },
+      function (db) { var ok = utils.isEqual(db.a, [1]); delete db.a; return ok }
+    );
+  }
 }

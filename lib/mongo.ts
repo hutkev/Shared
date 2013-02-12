@@ -251,22 +251,43 @@ module shared {
         var curP = new rsvp.Promise();
         curP.resolve();
 
-        // Ref & Rev set, for later action
+        // Ref change & Rev set, for later action
+        // Note: New objects are given a starting ref change of -1 to counter 
+        // the + 1 they are given when loaded into mongo. Net effect is that 
+        // something must reference them to stop them being deleted at the end 
+        // of the pass, which of course the normal case.
         var rrset = new utils.IdMap();
 
-        // Load up new objects
+        // Scan nset for cross references
         var nset = mtx.nset;
         for (var i = 0; i < nset.size(); i++) {
           var nentry = nset.at(i);
           utils.dassert(this._cache.find(nentry.id) === null);
 
-          // Write with 1 ref, but compensate in r&r set
+          // Scan for non-tracked objects
+          var keys = Object.keys(nentry.obj);
+          for (var k = 0 ; k < keys.length; k++) {
+            var v=nentry.obj[keys[k]]
+            if (utils.isObjectOrArray(v) && tracker.getTrackerUnsafe(v)===null) {
+              var vid = this.valueId(v);
+              var rr: RRData = rrset.findOrInsert(vid, { uprev: false, ref: -1, reinit: false });
+              rr.ref++;
+            }
+          }
+        }
+
+        // Load up new objects
+        for (var i = 0; i < nset.size(); i++) {
+          var nentry = nset.at(i);
+          utils.dassert(this._cache.find(nentry.id) === null);
+
+          // Write with 1 ref, compensated in r&r set
           var writeObjectFn = (function (_id,_obj) {
             return function () {return that.writeObject(_id, _obj, 0, 1) };
           });
           curP = that.wait(curP, writeObjectFn(nentry.id, nentry.obj));
           var rr: RRData = { uprev: false, ref: -1, reinit: false};
-          rrset.insert(nentry.id, rr);
+          rrset.findOrInsert(nentry.id, { uprev: false, ref: -1, reinit: false });
 
           // Time to start tracking changes
           new tracker.Tracker(that, nentry.obj, nentry.id, 0);
@@ -279,6 +300,7 @@ module shared {
 
           // Pull some basic details about target object
           var e = cset.at(i);
+          if (e === null) continue;
           var t = tracker.getTracker(e.obj);
           var id = t.id();
           var tdata: TrackerData = t.getData();
@@ -795,6 +817,7 @@ module shared {
         var that = this;
 
         // Prep a copy for upload
+        var rout = 0;
         var fake : any = {};
         fake._data = utils.clone(obj);
         var keys = Object.keys(obj);
@@ -802,12 +825,14 @@ module shared {
           if (utils.isObjectOrArray(obj[keys[k]])) {
             var id = that.valueId(obj[keys[k]]);
             fake._data[keys[k]] = { _id: id.toString() };
+            rout++;
           }
         }
         fake._id = utils.toObjectID(oid);  
         fake._rev = rev;
         fake._ref = ref;
-        fake._type = utils.isObject(obj)?'Object':'Array';
+        fake._type = utils.isObject(obj) ? 'Object' : 'Array';
+        tracker.getTracker(obj).setData({ rout: rout, rin: ref });
 
         // Upload the fake
         var p = new rsvp.Promise();
@@ -861,23 +886,44 @@ module shared {
         var revinc = 0;
         if (revchange) 
           revinc = 1;
-        that._collection.findAndModify({ _id:  utils.toObjectID(oid) }, [], { $inc: { _rev: revinc, _ref: refchange } }, 
-          { safe: true, remove:false, upsert:false, new:true }, function (err,doc) {
+          that._collection.findAndModify({ _id:  utils.toObjectID(oid) }, [], { $inc: { _rev: revinc, _ref: refchange } }, 
+            { safe: true, remove:false, upsert:false, new:true }, function (err,doc) {
           if (err) {
             that.fail(p, '%s: Update failed on object ref for %s error %s', that.id(), oid, err.message);
           } else {
             if (doc === null) {
               that.fail(p, '%s: Update failed on object ref for %s empty doc', that.id(), oid);
             } else {
+
+              // Delete this object if needed
+              var d;
               if (doc._ref === 0) {
-                that.deleteObject(oid).then(function () {
-                  p.resolve();
-                }, function (err) {
-                  p.reject(err);
+                d = that.deleteObject(oid)
+
+                // Scan object for outgoing links & down ref them
+                var dropRefFn = (function (_id) {
+                  return function () { return that.changeRevAndRef(utils.makeUID(_id), false, -1) };
                 });
+
+                var keys = Object.keys(doc._data);
+                for (var k = 0 ; k < keys.length; k++) {
+                  var v = doc._data[keys[k]];
+                  if (utils.isObject(v) && utils.isEqual(Object.keys(v), ['_id'])) {
+                    var rid = v._id;
+                    d = that.wait(d, dropRefFn(rid));
+                  }
+                }
+
               } else {
-                p.resolve();
+                d = new rsvp.Promise();
+                d.resolve();
               }
+
+              d.then(function () {
+                p.resolve();
+              }, function (err) {
+                p.reject(err);
+              });
             }
           }
         });

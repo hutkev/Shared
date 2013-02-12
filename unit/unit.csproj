@@ -34,6 +34,7 @@
     <TypeScriptCompile Include="test-utils.ts" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="test-commit.ts" />
     <Content Include="test-undo.ts" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />

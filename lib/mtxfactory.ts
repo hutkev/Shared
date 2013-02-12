@@ -183,8 +183,10 @@ module shared {
       okMtx(store: ObjectCache): void {
         // Reset last change
         this._mtx.cset.apply(function (ci: ChangeItem) {
-          var t = tracker.getTracker(ci.obj);
-          t.setLastChange(-1);
+          if (ci !== null) {
+            var t = tracker.getTracker(ci.obj);
+            t.setLastChange(-1);
+          }
         });
 
         this.resetMtx();
