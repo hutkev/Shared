@@ -30,7 +30,7 @@ module shared {
 
     export function makeUID(id: string) {
       var uid = new ObjectID(id);
-      dassert(isUID(uid) && uid.toString()==id);
+      dassert(isUID(uid) && uid.toString()==id.toLowerCase());
       return uid;
     }
 
