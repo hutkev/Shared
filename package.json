@@ -1,6 +1,7 @@
 {
   "name": "shared",
   "version": "0.2.0",
+  "author": "Kevin Jones <k.j.jonez@gmail.com>",
   "description": "Shared objects over MongoDB",
   "main": "lib/shared.js",
   "directories": {
@@ -13,9 +14,14 @@
     "bson": "~0.1.5",
     "mongodb": "~1.2.9"
   },
-  "devDependencies": {},
+  "bundledDependencies": [
+     "rsvp"
+  ],
+  "devDependencies": {
+    "typescript" : "0.8.2"
+  },
   "scripts": {
-    "test": "nodeunit tests"
+    "test": "nodeunit unit/unit.js"
   },
   "repository": {
     "type": "git",
@@ -24,7 +30,7 @@
   "keywords": [
     "Cluster",
     "Shared",
-    "Distributed"
-  ],
-  "author": "Kevin Jones <k.j.jonez@gmail.com>"
+    "Distributed",
+    "MongoDB"
+  ]
 }
