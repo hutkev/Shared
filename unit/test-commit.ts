@@ -14,6 +14,7 @@ module testcommit {
     if (store != null)
       store.close();
     store = new shared.store.MongoStore();
+    store.clean();
     return store;
   }
   
@@ -37,6 +38,25 @@ module testcommit {
       test.ok(err === null);
       s.close();
       test.done();
+    });
+  };
+
+  export function clean(test) {
+    var s = newPrimary();
+    s.apply(function (db) {
+      test.ok(utils.isEqual(db, {}));
+      db.a = 1;
+    }, function (err) {
+      s.clean(function (err) {
+        test.ok(err === null);
+        s.apply(function (db) {
+          test.ok(utils.isEqual(db, {}));
+        }, function (err) {
+          test.ok(err === null);
+          s.close();
+          test.done();
+        });
+      });
     });
   };
 

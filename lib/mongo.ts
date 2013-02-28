@@ -53,18 +53,30 @@ module shared {
         this._logger.debug('STORE', '%s: Store created', this.id());
       }
 
-      close() : void {
-        // Queue close, 
-        this._pending.push({ close: true });
+      apply(handler: (store: any) => any, callback?: (error: Error, arg: any) => void = function () { }): void {
+        // Queue
+        this._pending.push({ handler: handler, callback: callback });
 
         // Process queue
         this.processPending();
       }
 
-      apply(handler: (store: any) => any, callback?: (error: string, arg: any) => void = function () { }): void {
+      clean(callback?: (error: Error) => void = null ): void {
+        this.apply(function (db) {
+          // Delete all properties
+          var keys = Object.keys(db);
+          for (var k = 0; k < keys.length; k++) {
+            delete db[keys[k]];
+          }
+        }, function (err) {
+          if (callback !== null)
+            callback(err);
+        });
+      }
 
-        // Queue
-        this._pending.push({ handler: handler, callback: callback });
+      close(): void {
+        // Queue close, 
+        this._pending.push({ close: true });
 
         // Process queue
         this.processPending();
@@ -87,20 +99,20 @@ module shared {
               that._logger.debug('STORE', '%s: Database has been closed', that.id());
             }
             that._pending.shift();
-          } else {
+          } else if (pending.handler) {
             // An Update
             that.getRoot().then(function (root) {
               that.tryHandler(pending.handler).then(function (ret) {
                 // Completed
-                that._logger.debug('STORE', '%s: Invoking user callback',that.id());
-                pending.callback(null,ret);
+                that._logger.debug('STORE', '%s: Invoking user callback', that.id());
+                pending.callback(null, ret);
                 that._pending.shift();
                 that.processPending(true);
               }, function (err) {
                 if (err) {
                   // Some error during processing
-                  that._logger.debug('STORE', '%s: Invoking user callback with error %j',that.id(),err);
-                  pending.callback(err,null);
+                  that._logger.debug('STORE', '%s: Invoking user callback with error %j', that.id(), err);
+                  pending.callback(err, null);
                   that._pending.shift();
                   that.processPending(true);
                 } else {
@@ -110,11 +122,13 @@ module shared {
               });
             }, function (err) {
               // No root object
-              that._logger.debug('STORE', '%s: Invoking user callback with error %j',that.id(),err);
-              pending.callback(err,null);
+              that._logger.debug('STORE', '%s: Invoking user callback with error %j', that.id(), err);
+              pending.callback(err, null);
               that._pending.shift();
               that.processPending(true);
             });
+          } else {
+            utils.dassert(false);
           }
         }
       }

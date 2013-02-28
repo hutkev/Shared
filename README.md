@@ -1,4 +1,4 @@
-﻿Shared – 0.2.0
+﻿Shared – 0.2.1
 ==============
 Kevin Jones (https://twitter.com/hutkev)
 

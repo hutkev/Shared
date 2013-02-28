@@ -16,6 +16,7 @@ module testundo {
     if (store != null)
       store.close();
     store = new shared.store.MongoStore();
+    store.clean();
     return store;
   }
 

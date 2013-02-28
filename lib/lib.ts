@@ -11,7 +11,7 @@
 /// <reference path='tracker.ts' />
 /// <reference path='mongo.ts' />
 
-var ver = '0.2.0';
+var ver = '0.2.1';
 
 exports.version = function () {
   return ver;
